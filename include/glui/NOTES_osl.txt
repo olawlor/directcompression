@@ -1,0 +1,214 @@
+2006/08/04:
+  Added refresh after GLUI::hide and show in glui.cpp.
+  This fixes the bug in bin/example5 where the "hide" button 
+  doesn't actually change anything until you move the mouse.
+
+
+--- Orion Sky Lawlor's silly dev. notes -------
+2006/05-2006/07
+
+GLUI:
+	Originally written by Paul Rademacher (unc) in 1998 to v. 2.0.
+	http://www.cs.unc.edu/~rademach/glui/
+	
+	Then Nigel Stewart took up maintainance with 2.1.
+	He released 2.2 for gcc 3.2 support in November 2002.
+	http://glui.sourceforge.net/
+
+	Migrated to sourceForge in 2003
+	
+	Bill Baxter added a bunch of updates in 2005.
+
+Things I've added:
+	- Comments: I've added doxygen comments to all of glui.h.  "make docs" to generate Doxygen in doc/html/index.html.
+	- Bug fix: rollout actually resizes properly when opened (bin/example5 demonstrated this bug).
+	- Bug fix: scroll bars have a (saner) time-based speed limit.  This is visible in scrolling around in bin/example6.
+	- Appearance: double-buffering can be turned on globally, eliminating flicker when, e.g., resizing bin/example5 window.  This is on by default; turn double-buffering off in GLUI::init or set glui->buffer_mode to GLUI::buffer_front.
+	- Appearance: the texture used in the GLUI_Rotation control sphere is now mipmapped, which is much smoother than nearest-neighbor.  It's also a stored (glGenTextures) texture, which is much much faster.
+	- Optimization: I moved GLUI_Node::add_child_to_control to a more linker-friendly location.  Now non-deprecated executables are up to 100KB smaller on disk.
+	- Optimization: glui_img's are now 1 byte per pixel instead of 3 ints per pixel.  This saves 50KB+ space on disk in the library and each executable.
+
+
+----------- Cool things about GLUI ---------
+
+Just a 288KB download.  No autoconf crap--
+just one directory full of C++ source code.
+12K lines; 200KB library with -O2 and strip.  
+Not bad.
+
+Seems 2D-centric, but looks good.  
+
+----------------- CVS access ---------------
+
+cvs -d:pserver:anonymous@glui.cvs.sourceforge.net:/cvsroot/glui login 
+doesn't seem to work.  CVS version doesn't seem that different, anyway...
+
+CVS can be browsed at:
+	http://cvs.sourceforge.net/viewcvs.py/glui/glui/src/
+
+The latest(?) CVS version seems to be up at
+	http://www.bebits.com/app/4275#download
+
+The newsgroup is almost totally deserted:
+	https://sourceforge.net/forum/forum.php?forum_id=319501
+
+
+
+
+----------------- Bitmap shrinkage -------------------
+50KB of the compiled library seems to be some sort of uncompressed texture.  This is probably because all the images, like glui_img_radiobutton_0.c are all arrays of *ints*, not *bytes*.  Fixed this silly bug, which cuts stripped library down to 155KB.
+
+2006/05/01:
+I've converted the bitmaps (glui_img_*) to 
+one-byte-per pixel.  Formerly they stored R, G, and B as 
+*ints*, and hence take 12 bytes per pixel in the object 
+file and memory!  This is a simple fix--I've got a 2.2 that 
+uses bytes, and my binaries are about 25% smaller overall!
+
+Actually seems to only be about a 30KB difference after stripping;
+that's a 15% improvement.
+
+Bitmaps only seem to use 5 shades anyway:
+	0 = black
+	64 = disabled black
+	128 = shadowing
+	192 = disabled white; background
+	255 = white
+
+But they're just 5KB now, so it doesn't matter anyway.
+Replacing the DN with numeric codes could help with switching 
+background colors--someday.
+
+
+2006/05/18
+I notice all the deprecated add_* routines are in glui_add_controls.cpp.
+Thus if you call any of the deprecated add routines, the .o files for 
+*all* controls get linked in.  
+
+Unfortunately, GLUI_Node::add_control is also in glui_add_controls.cpp,
+so all the controls always get linked in, which is silly.
+Moving GLUI_Node and GLUI_Main add_control to GLUI.o shrinks the
+binaries from:
+olawlor@dellawlor:~/dev/gl/lib/glui> ll bin/
+total 1480
+-rwxr-xr-x  1 olawlor family 225126 2006-05-18 22:17 example1
+-rwxr-xr-x  1 olawlor family 226110 2006-05-18 22:17 example2
+-rwxr-xr-x  1 olawlor family 243679 2006-05-18 22:17 example3
+-rwxr-xr-x  1 olawlor family 230681 2006-05-18 22:17 example4
+-rwxr-xr-x  1 olawlor family 247559 2006-05-18 22:17 example5
+-rwxr-xr-x  1 olawlor family 288253 2006-05-18 22:17 example6
+-rwxr-xr-x  1 olawlor family  12652 2006-05-18 22:17 ppm2array
+
+after the switch the binaries are much smaller:
+olawlor@dellawlor:~/dev/gl/lib/glui> ll bin/
+total 1060
+-rwxr-xr-x  1 olawlor family 138035 2006-05-18 22:31 example1
+-rwxr-xr-x  1 olawlor family 152778 2006-05-18 22:31 example2
+-rwxr-xr-x  1 olawlor family 170340 2006-05-18 22:31 example3
+-rwxr-xr-x  1 olawlor family 142047 2006-05-18 22:31 example4
+-rwxr-xr-x  1 olawlor family 228927 2006-05-18 22:31 example5
+-rwxr-xr-x  1 olawlor family 202590 2006-05-18 22:31 example6
+-rwxr-xr-x  1 olawlor family  12652 2006-05-18 22:17 ppm2array
+
+The size drops because not every program uses every control.
+
+
+
+----------------- Class Heirarchy ---------------
+
+GLUI_Control : GLUI_Node
+GLUI_Control has all the drawing calls you'd expect.
+GLUI_Button : GLUI_Control
+
+
+-------------- Connection with User code & GLUT --------
+
+  rightWindow = GLUI_Master.create_glui_subwindow( main_window, 
+                                            GLUI_SUBWINDOW_RIGHT );
+  make a new GLUI object, calls init, and links it to the 
+  GLUI_Master_Object list of GLUIs.
+
+
+--------------- General Rendering -------------------
+There's some crufty code in the rendering-- it always goes to 
+the front buffer, which causes flickering.
+
+There's also *nasty* copy-and-paste around every draw call:
+  int state, orig;
+  if ( NOT can_draw() )
+    return;
+
+  orig  = set_to_glut_window();
+  state = glui->set_front_draw_buffer();
+
+  glui->restore_draw_buffer(state);
+  restore_window(orig);
+
+This shows up *everywhere*; esp. the set/restore_window (52x).
+set/restore_draw_buffer only shows up in 10 places.
+
+This'd be a good one to replace with a sentinal object.
+I'm doin' a macro:
+  GLUI_DRAWINGSENTINAL_IDIOM
+grep set_to_glut_window *.cpp
+
+
+--> GLUI_rollouts are screwed up. (aboriginally)
+
+--> Double-buffering would be nice.  I've currently
+hacked in something that does a glutPostWindowRedisplay
+at the end of every drawing routine.   This should be 
+glutSwapEventually or something.
+
+There are LOTS of places where the GUI code is friggin' complicated because it's trying to do an incremental screen update in-place, rather than just drawing from scratch.  Check out e.g., GLUI_StaticText::set_text.
+
+See, e.g., "translate_and_draw_front".
+
+------ Hacking State ------
+1.) Converting rendering to use back buffer to avoid flashing.
+This is a fairly involved change.  
+	- Add GLUI_DRAWINGSENTINAL_IDIOM macro
+	- Currently hacked in a glutRepaint at end of every draw--wrong.
+	  Just need a glutSwapBuffers.
+	- Should call some "request redraw" method when stuff changes,
+	  not try to update in-place.
+
+To do this, I added a (silly named) glui_internal_control.h
+internal header file.
+
+2.) Adding doxygen comments.
+3.) Tried ripping out default constructors.  Got a crash.
+  This also breaks backward compatability, and so isn't worth it.
+  Backed out.
+
+TODO:
+Fix redraw--just need one glutSwapBuffers call after GUI changes.
+Probably better to avoid *all* drawing except in draw routine.
+Might want to add *ability* to render to front buffer--one
+can imagine folks that would object to redrawing the whole world
+just to flash the cursor, even though it's the OpenGL way...
+
+Fix rollup size change.  It's broken in several ways.
+
+
+
+--------------
+In progress:
+Allow either front-buffer-only with incremental updates 
+or double-buffering, depending on runtime flag.
+
+This could be something simple like
+	if (should_redraw_now()) draw();
+
+where should_draw_now:
+	- returns true (if "can_draw") in immediate mode
+	- returns false, and queues up a redraw, in double-buffer mode
+
+Be careful!
+	should_redraw_now shouldn't be called from a double-buffer redraw
+(Aught to check this sometime...)
+
+-------------
+Testing in Windows:
+
+cl -I. -Iinclude -DGLUI_NO_LIB_PRAGMA=1 *.cpp example/example5.cpp -o bin/example5.exe /EHsc /GR

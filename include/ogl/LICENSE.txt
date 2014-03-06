@@ -1,0 +1,6 @@
+All code by Orion Lawlor released to public domain.
+
+GLEW source code (glew, glxew, wglew) is released under
+a modified BSD source license: http://glew.sourceforge.net/sgi.txt.
+The only changes to the GLEW source code here is the replacement
+of the "GL/" include path with "ogl/".

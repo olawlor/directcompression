@@ -1,0 +1,13 @@
+Schemes for doing buffer readback:
+
+1.) Copy to host and back:
+	glReadPixels into buffer
+	glTexSubImage2D to copy back to texture  
+           glReadPixels(RGBA):  13.808 us + 716.679 ns/pixel
+	   glTexImage2D(RGBA):  1.074 us + 4.024 ns/pixel
+
+2.) Copy on graphics card
+	glCopyTexSubImage2D from framebuffer to texture
+           glCopyTexSubImage2D:  8.504 us + 1.656 ns/pixel
+
+3.) 
