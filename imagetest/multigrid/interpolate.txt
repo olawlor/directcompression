@@ -1,0 +1,17 @@
+/*
+ GLSL fragment shader: interpolate 
+ Dr. Orion Sky Lawlor, olawlor@acm.org, 2010-09-04 (Public Domain)
+*/
+const float M_PI=3.1415926535;
+uniform sampler2D srctex;
+varying vec3 G; // proxy geometry location, world coordinates
+varying vec2 texcoords;
+uniform vec2 texdel;
+
+void main(void) {
+	vec4 sum=vec4(0.0);
+	sum=texture2D(srctex,texcoords);
+	sum+=texture2D(srctex,texcoords+texdel);
+	gl_FragColor = sum*0.5;
+}
+
