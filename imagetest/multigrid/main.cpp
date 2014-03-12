@@ -53,7 +53,8 @@ void display(void)
 	glClearColor(0.4,0.5,0.7,0.0); // background color
 	glClear(GL_COLOR_BUFFER_BIT + GL_DEPTH_BUFFER_BIT);
 	
-	glViewport(0,0, glutGet(GLUT_WINDOW_WIDTH),glutGet(GLUT_WINDOW_HEIGHT));
+	int wid=glutGet(GLUT_WINDOW_WIDTH), ht=glutGet(GLUT_WINDOW_HEIGHT);
+	glViewport(0,0, wid,ht);
 	
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity(); // flush any ancient matrices
@@ -65,8 +66,11 @@ void display(void)
 	static GLhandleARB prog=makeProgramObjectFromFiles(
 		"interpolate_vtx.txt","interpolate.txt");
 	glUseProgramObjectARB(prog);
-	float pix=10.0;
-	glFastUniform2fv(prog,"texdel",1,vec3(pix/1024.0,pix/768.0,0.0));
+	float pix=20.0;
+	glFastUniform2fv(prog,"texdel",1,vec3(pix/wid,pix/ht,0.0));
+	static float tweak=4.0;
+	glFastUniform1f(prog,"tweak",tweak);
+	
 	
 	static bool read_imgs=true; /* only read textures on the first frame */
 /* Upload planet texture, to texture unit 1 */
@@ -111,7 +115,7 @@ void display(void)
 	static int framecount=0, last_framecount=0;
 	framecount++;
 	double cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
-	if (cur_time>0.5+last_time) 
+	if (cur_time>1.0+last_time) 
 	{ // every half a second, estimate fps
 		double time=cur_time-last_time;
 		double time_per_frame=time/(framecount-last_framecount);
@@ -131,9 +135,12 @@ void display(void)
 			}
 		}
 		else { /* not a benchmark, just an ordinary run */
-			char str[100];
-			sprintf(str,"Interpolator: %.1f fps, %.1f ms/frame",
-				1.0/time_per_frame,1.0e3*time_per_frame);
+			printf("Interpolator: %.1f fps, %.1f ms/frame %.2f ns/pixel tweak %.6f\n",
+				1.0/time_per_frame,1.0e3*time_per_frame,
+				1.0e9*time_per_frame/(wid*ht),tweak);
+			fflush(stdout);
+			
+			tweak=tweak*0.5;
 		}
 		last_framecount=framecount;
 		last_time=cur_time;
