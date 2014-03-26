@@ -22,7 +22,8 @@ OpenGL Extensions Wrangler:  for gl...ARB extentions.  Must call glewInit after 
 
 
 const float km=1.0/6371.0; // convert kilometers to render units (planet radii)
-int benchmode=0;
+int benchmode=0, dumpmode=0;
+float bench_target=0.0;
 double interval_time=1.0; // seconds to show each image
 
 /** SOIL **/
@@ -68,8 +69,10 @@ const char *source_image="../real/ocean.jpg";
 class multigrid_renderer {
 public:
 	int wid,ht; // size of full resolution image
-	enum {msaa=1}; // levels of multisample antialiasing: 4^msaa samples per pixel.
-	enum {levels=3+msaa}; // multigrid levels are from 0..levels-1.  level==msaa is the full resolution image
+	enum {msaa=0}; // levels of multisample antialiasing: 4^msaa samples per pixel.
+	enum {levels=
+#include "sweep_levels.h"
++msaa}; // multigrid levels are from 0..levels-1.  level==msaa is the full resolution image
 	oglFramebuffer *fb[levels];
 	
 	multigrid_renderer(int wid_,int ht_) 
@@ -88,7 +91,7 @@ public:
 		glTexCoord2f(1,1); glVertex3d(+1.0,+1.0,0.0); 
 		glEnd();
 		
-		if (true && framecount==0) {
+		if (dumpmode==2 && framecount==0) {
 			oglDumpScreen(); // debug
 			oglDumpAlpha();
 		}
@@ -187,8 +190,8 @@ void display(void)
 	glUseProgramObjectARB(prog);
 	float pix=20.0;
 	glFastUniform2fv(prog,"texdel",1,vec3(pix/wid,pix/ht,0.0));
-	static float tweak=2.0;
-	glFastUniform1f(prog,"tweak",tweak);
+	static float threshold=2.0;
+	glFastUniform1f(prog,"threshold",threshold);
 	
 	
 	static bool read_imgs=true; /* only read textures on the first frame */
@@ -211,7 +214,53 @@ void display(void)
 	renderer->render(prog);
 	
 	
+	
+	float pixelScale=1.0/(wid*ht);
+	static double prev_err=-1.0, prev_thresh=-1.0;
+	if (benchmode==2) {
+		// seeking a target render rate
+		float render=last_render*pixelScale;
+		float err=render-bench_target;
+		
+		static int leash=20;
+		if (fabs(err)<0.001	|| leash--<=0) { // we hit it!
+			printf("Target	%f	%f	%f	%f\n",
+				threshold,
+				last_render*pixelScale,
+				last_error1*pixelScale/255.0,
+				last_error2*pixelScale/(255.0*255.0)
+			);
+			// dump the final image
+			benchmode=0; // real image, not error metric
+			renderer->render(prog);
+			oglDumpAlpha();
+			oglDumpScreen();
+			exit(0);
+		}
+		printf("Render=%f at threshold=%f (err %f)",render,threshold,err);
+		
+		float next_thresh=0.0;
+		if (prev_thresh<0.0) { // first step: blind jump
+			next_thresh=threshold+0.5*err;
+			if (next_thresh<0) next_thresh=0.001;
+			printf(" -> new threshold %f\n",next_thresh);
+		} else { // subsequent step: secant method
+			float slope=(threshold-prev_thresh)/(err-prev_err);
+			float limit=1.0;
+			if (slope>limit) slope=limit;
+			if (slope<-limit) slope=-limit;
+			next_thresh=threshold-err*slope;
+			printf(" slope %f -> new threshold %f\n",
+				slope,next_thresh);
+		}
+		prev_err=err;
+		prev_thresh=threshold;
+		threshold=next_thresh;
+	}
+	
+	
 	glUseProgramObjectARB(0);
+	
 	
 	if (key_down['p']) {
 		oglDumpScreen();
@@ -226,7 +275,7 @@ void display(void)
 	glFinish();
 	framecount++;
 	double cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
-	if (cur_time>interval_time+last_time) 
+	if (benchmode<2 && cur_time>interval_time+last_time) 
 	{ // every half a second, estimate fps
 		double time=cur_time-last_time;
 		double time_per_frame=time/(framecount-last_framecount);
@@ -234,9 +283,8 @@ void display(void)
 		if (benchmode==1) {
 			static FILE *f=fopen("bench.txt","a");
 			static int bcount=0;
-			float pixelScale=1.0/(wid*ht);
 			fprintf(f,"%d	%.6f	%.6f	%.6f	%.6f\n",
-				bcount,tweak,
+				bcount,threshold,
 				last_render*pixelScale,
 				last_error1*pixelScale/255.0,
 				last_error2*pixelScale/(255.0*255.0)
@@ -247,17 +295,17 @@ void display(void)
 				int err=system("cat bench.txt");
 				exit(err);
 			}
-			tweak=tweak*0.9;
+			threshold=threshold*0.9;
 		}
 		else { /* not a benchmark, just an ordinary run */
-			printf("Interpolator: %.1f fps, %.1f ms/frame %.2f ns/pixel tweak %.6f\n",
+			printf("Interpolator: %.1f fps, %.1f ms/frame %.2f ns/pixel threshold %.6f\n",
 				1.0/time_per_frame,1.0e3*time_per_frame,
-				1.0e9*time_per_frame/(wid*ht),tweak);
+				1.0e9*time_per_frame/(wid*ht),threshold);
 			fflush(stdout);
 			oglDumpScreen();
 			oglDumpAlpha();
 			
-			tweak=tweak*0.8;
+			threshold=threshold*0.8;
 		}
 		last_framecount=framecount;
 		last_time=cur_time;
@@ -276,6 +324,7 @@ int main(int argc,char *argv[])
 #endif
 	for (int argi=1;argi<argc;argi++) {
 		if (0==strcmp(argv[argi],"-bench")) { benchmode=1; interval_time=0.01; }
+		else if (0==strcmp(argv[argi],"-target")) { benchmode=2; bench_target=atof(argv[++argi]); }
 		else if (0==strcmp(argv[argi],"-img")) { source_image=argv[++argi]; }
 		else if (0==strcmp(argv[argi],"-pixelbench")) benchmode=2;
 		else if (2==sscanf(argv[argi],"%dx%d",&w,&h)) {}
