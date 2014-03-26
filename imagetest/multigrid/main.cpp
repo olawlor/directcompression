@@ -15,8 +15,15 @@ OpenGL Extensions Wrangler:  for gl...ARB extentions.  Must call glewInit after 
 #include "osl/mat4_inverse.h"
 #include "ogl/dumpscreen.h"
 
+#include "ogl/framebuffer.h"
+#include "ogl/framebuffer.cpp"
+#include "ogl/util.cpp"
+#include "ogl/fast_mipmaps.c"
+
+
 const float km=1.0/6371.0; // convert kilometers to render units (planet radii)
 int benchmode=0;
+double interval_time=1.0; // seconds to show each image
 
 /** SOIL **/
 #include "soil/SOIL.h" /* Simple OpenGL Image Library, www.lonesock.net/soil.html (plus Dr. Lawlor
@@ -34,27 +41,139 @@ void read_soil_jpeg(const char *filename, GLenum mode=GL_RGBA8)
 		SOIL_FLAG_MIPMAPS | SOIL_FLAG_INVERT_Y,
 		mode
 	);
+	if (srcTex==0) { printf(" Failed to load image."); exit(1); }
 	printf(".\n");
 	glBindTexture(GL_TEXTURE_2D,srcTex);
 }
 
 
-const char *source_image="../real/marble.jpg";
+const char *source_image="../real/ocean.jpg";
 
 
 #include <vector>
+
+	static int framecount=0, last_framecount=0;
+	static float last_render=0.0, last_error1=0.0, last_error2=0.0;
+
+
+/**
+ Renders an image in steps, from coarse to fine resolution.
+ 
+ FIXME: need to decouple and parameterize several things here
+ 	- Multigrid level count
+ 	- Estimation scheme
+ 	- Interpolation scheme
+ 	- Sampling backend (passed in from user)
+*/
+class multigrid_renderer {
+public:
+	int wid,ht; // size of full resolution image
+	enum {msaa=1}; // levels of multisample antialiasing: 4^msaa samples per pixel.
+	enum {levels=3+msaa}; // multigrid levels are from 0..levels-1.  level==msaa is the full resolution image
+	oglFramebuffer *fb[levels];
+	
+	multigrid_renderer(int wid_,int ht_) 
+	{
+		wid=wid_; ht=ht_;
+		for (int l=0;l<levels;l++) fb[l]=new oglFramebuffer(
+			(wid<<msaa)>>l,(ht<<msaa)>>l,GL_RGBA8);
+	}
+	
+	/** Draw a fullscreen quad (proxy geometry) */
+	void screen_quad(float alphaCheck) { 
+		glBegin (GL_QUAD_STRIP);
+		glTexCoord2f(0,0); glVertex3d(-1.0,-1.0,0.0); 
+		glTexCoord2f(1,0); glVertex3d(+1.0,-1.0,0.0); 
+		glTexCoord2f(0,1); glVertex3d(-1.0,+1.0,0.0); 
+		glTexCoord2f(1,1); glVertex3d(+1.0,+1.0,0.0); 
+		glEnd();
+		
+		if (true && framecount==0) {
+			oglDumpScreen(); // debug
+			oglDumpAlpha();
+		}
+		
+		int w,h;
+		int alphaTest=(int)ceil(alphaCheck*255.0)+1;
+		std::vector<unsigned char> rgba=oglDumpScreen(w,h,4);
+		for (int y=0;y<h;y++)
+		for (int x=0;x<w;x++) 
+		{
+			int i=4*(x+y*w);
+			int r=rgba[i+0];
+			int g=rgba[i+1];
+			int b=rgba[i+2];
+			int a=rgba[i+3];
+			if (alphaCheck==0.0) { // last render pass--compute error
+				last_error1+=r+g+b;
+				last_error2+=r*r+g*g+b*b;
+			} else if (a<=alphaTest) { // we just rendered this pixel
+				last_render++;
+			}
+		}
+		printf("%.2f(%d,%d): %.0f	%.0f	%.0f\n", 
+			alphaCheck,w,h,
+			last_render,last_error1,last_error2);
+	}
+	
+	// Convert a framebuffer (size) to a vec4 giving x,y pixel size, z,w 1.0/pixel size
+	vec4 framebuffer2vec4(const oglFramebuffer *fbo) {
+		return vec4(fbo->w,fbo->h,1.0/fbo->w,1.0/fbo->h);
+	}
+	
+	/**
+	 Loop over multigrid levels and do rendering.
+	 FIXME: inputs & sampling part of shader should be parameterized
+	*/
+	void render(GLhandleARB prog) {
+		last_render=0.0; last_error1=0.0; last_error2=0.0;
+		glFastUniform1f(prog,"benchmode",(float)benchmode);
+		
+		glFastUniform1f(prog,"multigridCoarsest",1.0f);
+		fb[levels-1]->bind();
+		screen_quad(1.0f);
+		for (int l=levels-2;l>=-1;l--) {
+			float multigridCoarsest=(l+1)*1.0/(levels);
+			glFastUniform1f(prog,"multigridCoarsest",multigridCoarsest);
+			if (l==-1) fb[levels-1]->unbind(); // last step: render to screen
+			else fb[l]->bind(); // intermediate step: render to framebuffer
+			
+			glActiveTexture(GL_TEXTURE7);
+			glBindTexture(GL_TEXTURE_2D,fb[l+1]->get_color());
+			glFastUniform1i(prog,"multigridCoarserTex",7);
+			glFastUniform4fv(prog,"multigridCoarser", 1, framebuffer2vec4(fb[l+1]) );
+			if (l>=0) glFastUniform4fv(prog,"multigridFiner", 1, framebuffer2vec4(fb[l]) );
+			else glFastUniform4fv(prog,"multigridFiner", 1, framebuffer2vec4(fb[msaa]) );
+			
+			screen_quad(multigridCoarsest);
+		}
+		
+		glBindTexture(GL_TEXTURE_2D,0); // clear texture state
+		glActiveTexture(GL_TEXTURE0);
+	}
+};
+
+multigrid_renderer *renderer=0;
 
 void display(void) 
 {
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
+	glDisable(GL_ALPHA_TEST);
 	glDisable(GL_CULL_FACE); 
 	
 	glClearColor(0.4,0.5,0.7,0.0); // background color
 	glClear(GL_COLOR_BUFFER_BIT + GL_DEPTH_BUFFER_BIT);
 	
+	glFinish();
+	double start_time=0.001*glutGet(GLUT_ELAPSED_TIME);
+	
+	
 	int wid=glutGet(GLUT_WINDOW_WIDTH), ht=glutGet(GLUT_WINDOW_HEIGHT);
-	glViewport(0,0, wid,ht);
+	if (!renderer || renderer->wid!=wid || renderer->ht!=ht) {
+		delete renderer;
+		renderer=new multigrid_renderer(wid,ht);
+	}
 	
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity(); // flush any ancient matrices
@@ -68,7 +187,7 @@ void display(void)
 	glUseProgramObjectARB(prog);
 	float pix=20.0;
 	glFastUniform2fv(prog,"texdel",1,vec3(pix/wid,pix/ht,0.0));
-	static float tweak=4.0;
+	static float tweak=2.0;
 	glFastUniform1f(prog,"tweak",tweak);
 	
 	
@@ -81,23 +200,15 @@ void display(void)
 	glFastUniform1i(prog,"srctex",1); // texture unit number
 	GLenum target=GL_TEXTURE_2D;
 	glTexParameteri(target, GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-	glTexParameteri(target, GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(target, GL_TEXTURE_MIN_FILTER,GL_LINEAR); // _MIPMAP_LINEAR);
 	GLenum texWrap=GL_CLAMP_TO_EDGE;
 	glTexParameteri(target, GL_TEXTURE_WRAP_S, texWrap); 
 	glTexParameteri(target, GL_TEXTURE_WRAP_T, texWrap);
 	read_imgs=false;
 	glActiveTexture(GL_TEXTURE0);
 	
-	// Only draw one set of faces, to avoid drawing raytraced geometry twice.
-	//   (front side may get clipped if you're inside the object, so draw back)
 	
-	// Draw proxy quad 
-	glBegin (GL_QUAD_STRIP);
-	glTexCoord2f(0,0); glVertex3d(-1.0,-1.0,0.0); 
-	glTexCoord2f(1,0); glVertex3d(+1.0,-1.0,0.0); 
-	glTexCoord2f(0,1); glVertex3d(-1.0,+1.0,0.0); 
-	glTexCoord2f(1,1); glVertex3d(+1.0,+1.0,0.0); 
-	glEnd();
+	renderer->render(prog);
 	
 	
 	glUseProgramObjectARB(0);
@@ -111,36 +222,42 @@ void display(void)
 	glutSwapBuffers();
 
 /* Estimate framerate */
-	static double last_time=0.0;
-	static int framecount=0, last_framecount=0;
+	static double last_time=0.001*glutGet(GLUT_ELAPSED_TIME);
+	glFinish();
 	framecount++;
 	double cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
-	if (cur_time>1.0+last_time) 
+	if (cur_time>interval_time+last_time) 
 	{ // every half a second, estimate fps
 		double time=cur_time-last_time;
 		double time_per_frame=time/(framecount-last_framecount);
+		time_per_frame=cur_time-start_time;
 		if (benchmode==1) {
 			static FILE *f=fopen("bench.txt","a");
 			static int bcount=0;
-			int w=glutGet(GLUT_WINDOW_WIDTH),h=glutGet(GLUT_WINDOW_HEIGHT);
-			/* count	resolution	frames/sec	milliseconds/frame        nanoseconds/pixel */
-			fprintf(f,"%d	%dx%d		%.2f	%.5f	%.3f\n",
-				bcount,w,h, 1.0/time_per_frame,
-				time_per_frame*1.0e3, time_per_frame/(w*h)*1.0e9);
-			if (bcount++>3) {
+			float pixelScale=1.0/(wid*ht);
+			fprintf(f,"%d	%.6f	%.6f	%.6f	%.6f\n",
+				bcount,tweak,
+				last_render*pixelScale,
+				last_error1*pixelScale/255.0,
+				last_error2*pixelScale/(255.0*255.0)
+				);
+			fflush(f);
+			if (bcount++>40) {
 				fclose(f);
 				int err=system("cat bench.txt");
-				oglDumpScreen();
 				exit(err);
 			}
+			tweak=tweak*0.9;
 		}
 		else { /* not a benchmark, just an ordinary run */
 			printf("Interpolator: %.1f fps, %.1f ms/frame %.2f ns/pixel tweak %.6f\n",
 				1.0/time_per_frame,1.0e3*time_per_frame,
 				1.0e9*time_per_frame/(wid*ht),tweak);
 			fflush(stdout);
+			oglDumpScreen();
+			oglDumpAlpha();
 			
-			tweak=tweak*0.5;
+			tweak=tweak*0.8;
 		}
 		last_framecount=framecount;
 		last_time=cur_time;
@@ -158,7 +275,8 @@ int main(int argc,char *argv[])
 	w=8000; h=4000;
 #endif
 	for (int argi=1;argi<argc;argi++) {
-		if (0==strcmp(argv[argi],"-bench")) benchmode=1;
+		if (0==strcmp(argv[argi],"-bench")) { benchmode=1; interval_time=0.01; }
+		else if (0==strcmp(argv[argi],"-img")) { source_image=argv[++argi]; }
 		else if (0==strcmp(argv[argi],"-pixelbench")) benchmode=2;
 		else if (2==sscanf(argv[argi],"%dx%d",&w,&h)) {}
 		else printf("Unrecognized argument '%s'!\n",argv[argi]);

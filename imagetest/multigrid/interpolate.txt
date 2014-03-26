@@ -7,14 +7,153 @@ uniform sampler2D srctex;
 varying vec3 G; // proxy geometry location, world coordinates
 varying vec2 texcoords;
 uniform vec2 texdel;
-uniform float tweak;
+uniform float tweak; // for debugging
+
+/**
+ Sample the scene at this location, writing its true color to gl_FragColor.
+*/
+void sample(void) {
+	gl_FragColor = texture2D(srctex,texcoords);
+}
+
+/********* Multigrid Rendering Compression Code **************/
+uniform float benchmode;
+uniform float multigridCoarsest; // 1.0 means we're at the initial level; <1.0 means a finer level; 0.0 means finest level
+uniform sampler2D multigridCoarserTex;  // texture with coarser multigrid levels (last render)
+uniform vec4 multigridCoarser; // pixel counts (xy) and 1.0/pixel counts (zw) for last render
+uniform vec4 multigridFiner; // pixel counts (xy) and 1.0/pixel counts (zw) for current render target
+
+
+/**
+A 2D polynomial
+	5-term polynomial = A+x*(B+x*C) + y*(D + y*G);
+	9-term polynomial = A+x*(B+x*C) + y*((D+x*(E+x*F)) + y*(G+x*(H+x*I)));
+*/
+struct polynomial2D {
+	vec3 A,B,C,D,E,F,G,H,I;
+};
+
+vec3 eval_polynomial2D_5(polynomial2D p,float x,float y) 
+{
+	return p.A+x*(p.B+x*p.C) + y*(p.D + y*p.G);
+}
+float matches_polynomial2D_5(polynomial2D p,float x,float y, vec3 expected) {
+	vec3 diff = eval_polynomial2D_5(p,x,y)-expected;
+	return length(diff);
+}
+vec3 eval_polynomial2D_9(polynomial2D p,float x,float y) 
+{
+	return p.A+x*(p.B+x*p.C) + y*((p.D+x*(p.E+x*p.F)) + y*(p.G+x*(p.H+x*p.I)));
+}
+
+
+/*
+  If this location is smooth in the coarse image, 
+  fit a polynomial to interpolate, write gl_FragColor, and return true.
+  If it's a bad fit, return false;
+*/
+bool multigridCoarseFits(vec2 texcoords) 
+{
+	vec2 coarsePixel = texcoords * multigridCoarser.xy; // our pixel coordinates in coarserTex
+	vec2 coarseCenter = coarsePixel - fract(coarsePixel) + vec2(0.5); // center of coarse pixel
+	vec2 cen=coarseCenter*multigridCoarser.zw; // interpolation center texcoords in coarserTex
+	vec2 del=vec2(multigridCoarser.zw); // interpolation size texcoords
+	
+	/* Fetch pixel neighborhood in coarser image 
+		y: Top (+), Middle, Bottom (-)
+		x: Left (-), Center, Right (+)
+	*/
+//	vec3 TL = vec3(texture2D(multigridCoarserTex,cen+vec2(-del.x,+del.y)));
+	vec3 TC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,+del.y)));
+//	vec3 TR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,+del.y)));
+		
+	vec3 ML = vec3(texture2D(multigridCoarserTex,cen+vec2(-del.x,0.0)));
+	vec3 MC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,0.0)));
+	vec3 MR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,0.0)));
+	
+//	vec3 BL = vec3(texture2D(multigridCoarserTex,cen+vec2(-del.x,-del.y)));
+	vec3 BC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,-del.y)));
+//	vec3 BR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,-del.y)));
+	
+	// Build interpolation polynomial to match central 5 points
+	polynomial2D p;
+	p.A = MC;  // constant term
+	
+	p.B = (MR - ML)*0.5; // linear term
+	p.D = (TC - BC)*0.5;
+	
+	p.C = (MR + ML)*0.5 - MC; // pure quadratic term
+	p.G = (TC + BC)*0.5 - MC;
+
+	// Check 5-term polynomial fit against neighborhood
+	const float nbor=2.0;
+	for (float nborY=-nbor;nborY<=nbor;nborY++)
+	for (float nborX=-nbor;nborX<=nbor;nborX++)
+	{
+		float nborlen=abs(nborX)+abs(nborY);
+		if (nborlen>1.0 && nborlen<4.0)
+		{
+			float error=matches_polynomial2D_5(p,nborX,nborY, 
+				vec3(texture2D(multigridCoarserTex,cen+del*vec2(nborX,nborY)))
+			);
+			if (error>tweak) return false;  // match is poor here.
+		}
+	}
+
+/*
+	error+=matches_polynomial2D_5(p,-1.0,-1.0,BL);
+	error+=matches_polynomial2D_5(p,+1.0,-1.0,BR);
+	error+=matches_polynomial2D_5(p,-1.0,+1.0,TL);
+	error+=matches_polynomial2D_5(p,+1.0,+1.0,TR);
+	if (error>tweak) return false;  // match is poor here.
+	
+	// Compute terms for 9-term polynomial, for doing interpolation
+	p.E = (-TL+TR +BL-BR )*0.25; // mixed terms
+	p.F = (+TL+TR -BL-BR )*0.25 - p.D;
+	p.H = (-TL+TR -BL+BR )*0.25 - p.B;
+	p.I = (+TL+TR +BL+BR )*0.25 - p.C - p.G - MC;
+	vec2 polycoords=coarsePixel - coarseCenter;
+	gl_FragColor = vec4(eval_polynomial2D_9(p,polycoords.x,polycoords.y),1.0); // sucks!
+	// gl_FragColor = vec4(eval_polynomial2D_5(p,polycoords.x,polycoords.y),1.0);  // also sucks
+*/
+	
+	
+	gl_FragColor = texture2D(multigridCoarserTex,texcoords); // fallback: bilinear
+	
+	return true; // good fit
+}
+
 
 void main(void) {
-	vec4 sum=vec4(0.0);
-	float d=max(tweak,0.1);
-	for (float dx=-1.0;dx<=1.0;dx+=d)
-	for (float dy=-1.0;dy<=1.0;dy+=d)
-		sum+=texture2D(srctex,texcoords+vec2(dx,dy)*texdel);
-	gl_FragColor = sum/sum.a;
+	// Special debugging on last level:
+	if (multigridCoarsest==0.0) {
+		// Sum the "coarser" level (actually fullres image)
+		vec4 avgColor=vec4(0.0); float avgCount=0.0;
+		vec2 start=texcoords - 0.5*multigridFiner.zw; // one screen pixel
+		vec2 end=texcoords + 0.5*multigridFiner.zw;
+		for (float subY=start.y;subY<=end.y;subY+=multigridCoarser.w) 
+		for (float subX=start.x;subX<=end.x;subX+=multigridCoarser.z)
+		{
+			avgColor += texture2D(multigridCoarserTex, vec2(subX,subY));
+			avgCount++;
+		}
+		
+		if (benchmode>=1.0) {
+			// Compare against finely sampled true image
+			vec4 trueColor = vec4(0.0);
+			float del=1.0/16.0; // subsamples for final "true" color check
+			for (float subY=-0.5;subY<+0.5;subY+=del) 
+			for (float subX=-0.5;subX<+0.5;subX+=del)
+				trueColor += texture2D(srctex, texcoords + multigridFiner.zw*vec2(subX,subY));
+			gl_FragColor.rgb = abs(avgColor.rgb/avgCount - trueColor.rgb/trueColor.a);
+		} else { // write out color image normally
+			gl_FragColor = avgColor/avgCount;
+		}
+	}
+	else if (multigridCoarsest==1.0 || !multigridCoarseFits(texcoords)) 
+	{ // coarsest level: take expensive samples
+		sample(); // writes gl_FragColor
+		gl_FragColor.a = multigridCoarsest;
+	}
 }
 
