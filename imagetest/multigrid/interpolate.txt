@@ -69,8 +69,9 @@ bool needs_sample(err_list e,int nerr,float sumScale)
   fit a polynomial to interpolate, write gl_FragColor, and return true.
   If it's a bad fit, return false;
 */
-bool multigridCoarseFits(vec2 texcoords) 
+bool multigridCoarseFits() 
 {
+	vec2 texcoords = gl_FragCoord.xy*multigridFiner.zw;
 	vec2 coarsePixel = texcoords * multigridCoarser.xy; // our pixel coordinates in coarserTex
 	vec2 coarseCenter = coarsePixel - fract(coarsePixel) + vec2(0.5); // center of coarse pixel
 	vec2 cen=coarseCenter*multigridCoarser.zw; // interpolation center texcoords in coarserTex
@@ -279,8 +280,8 @@ void main(void) {
 			gl_FragColor = avgColor/avgCount;
 		}
 	}
-	else if (multigridCoarsest==1.0 || !multigridCoarseFits(texcoords)) 
-	{ // coarsest level: take expensive samples
+	else if (multigridCoarsest==1.0 || !multigridCoarseFits()) 
+	{ // take expensive samples
 		sample(); // writes gl_FragColor
 		gl_FragColor.a = multigridCoarsest;
 	}

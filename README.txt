@@ -32,24 +32,14 @@ For example, starting with 16x16 pixel "macropixels" (the same size as JPEG/MPEG
 - Fractal renderers
 	https://www.cs.uaf.edu/2013/spring/cs493/lecture/demo/03_19_fractal.html
 
+For testing sampling strategies, I'm going to start with a known high-resolution image, like from a photograph.  We can then sample this and compare (or autotune) against ground truth, trying to maximize quality and minimize the number of spatial samples used for reconstruction.
 
-Prior work:
-
-"Terrain simplification simplified: A general framework for view-dependent out-of-core visualization"
-Peter Lindstrom and Valerio Pascucci
-  IEEE Transactions on Visualization and Computer Graphics, 8(3), 2002
-     They show how to build a manifold spatial tree without hanging nodes, by baking an opening criteria into each node.  This could be used to create geometry between our interpolated scene samples.
+The real question is the shape of the sample count vs image quality curve: how fast does quality fall off as you take fewer and fewer samples?
+(Which perceptual metric do we use to measure image quality? L1 norm? L2?)
 
 
 
 ----------- Animation: MPEG output --------------
 A renderer can use the known geometry of the rendered objects and the camera paths to determine how rendered objects will move onscreen.  This could be used in two ways: first, in MPEG output to create perfect motion vectors for block motion "prediction"; second, during realtime rendering to exploit frame coherence.
 
-Prior work: 
-
-"Accelerating Ray Tracing by Exploiting Frame-to-Frame Coherence"
-Joe Demers, Ilmi Yoon, Tae-Yong Kim, Ulrich Neumann
-1998, USC Computer Science Tech Report 98-668
-	http://www.cs.usc.edu/assets/004/83269.pdf
-	Aliasing is a major issue with this approach
 
