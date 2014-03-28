@@ -208,7 +208,8 @@ vec3 sample_planet(vec3 P) {
 	float r=length(vec2(x,y));
 	float latitude=atan(z/r)*(1.0/M_PI)+0.5;
 	float longitude=fract(atan(y,x)*(0.5/M_PI)+0.0); //+0.5-time_uniform*0.0001);
-	return vec3(texture2D(nightearthtex,vec2(longitude,latitude)));
+	vec3 nightearthCast=vec3(0.2,0.18,0.15); // sodium vapor glow
+	return nightearthCast*vec3(texture2D(nightearthtex,vec2(longitude,latitude)));
 	//return vec3(1,0,0);
 	//return i.s.color;
 }

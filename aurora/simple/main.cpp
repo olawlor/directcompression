@@ -1,7 +1,7 @@
 /**
-  Aurora Rendering demo application.
+  Aurora Rendering demo application, with rendering time compression
   
-  Orion Sky Lawlor, olawlor@acm.org, 2010-09-22 (Public Domain)
+  Orion Sky Lawlor, olawlor@acm.org, 2014-03-27 (Public Domain)
 */
 #include <iostream>
 #include <cmath>
@@ -58,33 +58,6 @@ unsigned int loadCubemap(const std::string &dir) {
 
 #include <vector>
 
-// A quadric object
-struct quadric_object {
-	osl::mat4 A; // quadric surface matrix: 0 = x^T A x
-	
-	vec3 color; // diffuse color
-	float reflect; // 0=matte; 1=totally specular reflective
-	
-	osl::mat4 MVinv; // from world to trim space
-	
-	float refract; // 0=matte; 1=totally transparent
-	float refract_index; // refractive index (if refractive)
-	float checkerboard; // 0=uniform color; 1=black and white checkers
-	float slice; // slices per meter
-	
-	//float opacity; // 0=transparent; 1=opaque
-};
-
-void upload_modelview(osl::mat4 &A,quadric_object &q) 
-{
-	// Object matrix
-	osl::mat4 mv; // object -> world space
-	glGetFloatv(GL_MODELVIEW_MATRIX,&mv[0][0]);
-	osl::mat4 B=inverse(mv); // world -> object
-	q.MVinv=B;
-	osl::mat4 BAB=transpose(B)*A*B; // see rule to modify quadric object
-	q.A=BAB; // upload quadric matrix
-}
 
 void display(void) 
 {
@@ -112,10 +85,7 @@ void display(void)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity(); // flush any ancient matrices
 	
-	/* The proxy sphere should be gently rotating */
-	const float rotate_rate=0.01; /* revolutions per second */
 	double time_in_seconds=glutGet(GLUT_ELAPSED_TIME)*0.001;
-	float angle=time_in_seconds*rotate_rate*360;
 	
 	/* Build the pixel shader */
 	static GLhandleARB prog=makeProgramObjectFromFiles(
@@ -126,7 +96,7 @@ void display(void)
 	static bool read_imgs=true; /* only read textures on the first frame */
 /* Upload planet texture, to texture unit 1 */
 	glActiveTexture(GL_TEXTURE1);
-	if (read_imgs) read_soil_jpeg("tex/nightearth.jpg",GL_LUMINANCE8);
+	if (read_imgs) read_soil_jpeg("tex/nightearth.png",GL_LUMINANCE8);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAX_ANISOTROPY_EXT,4);
 	//glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
 	glFastUniform1i(prog,"nightearthtex",1); // texture unit number
@@ -166,11 +136,12 @@ void display(void)
 	glEnable(GL_TEXTURE_CUBE_MAP);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER,GL_LINEAR);//_MIPMAP_LINEAR);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); 
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER); 
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
 	glFastUniform1i(prog,"stars",5); // texture unit number
 	
-/* Upload cloud texture, to texture unit 6 */
+/* Upload cloud texture, to texture unit 6 
 	glActiveTexture(GL_TEXTURE6);
 	if (read_imgs) read_soil_jpeg("tex/clouds.jpg",GL_LUMINANCE8);
 	//glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAX_ANISOTROPY_EXT,8);
@@ -178,7 +149,7 @@ void display(void)
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_REPEAT);
 	glFastUniform1i(prog,"clouds",6); // texture unit number
-	
+*/
 	
 	
 	read_imgs=false;
@@ -221,28 +192,36 @@ void display(void)
 	glutSwapBuffers();
 
 /* Estimate framerate */
+	glFinish();
 	static double last_time=0.0;
 	static int framecount=0, last_framecount=0;
 	framecount++;
 	double cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
-	if (cur_time>0.5+last_time) 
-	{ // every half a second, estimate fps
+	if (cur_time>0.1+last_time) 
+	{ // every tenth of a second, estimate fps
 		double time=cur_time-last_time;
 		double time_per_frame=time/(framecount-last_framecount);
 		if (benchmode==1) {
-			static FILE *f=fopen("bench.txt","a");
+			static FILE *f=fopen("bench.txt","w");
 			static int bcount=0;
 			int w=glutGet(GLUT_WINDOW_WIDTH),h=glutGet(GLUT_WINDOW_HEIGHT);
 			/* count	resolution	frames/sec	milliseconds/frame        nanoseconds/pixel */
 			fprintf(f,"%d	%dx%d		%.2f	%.5f	%.3f\n",
 				bcount,w,h, 1.0/time_per_frame,
 				time_per_frame*1.0e3, time_per_frame/(w*h)*1.0e9);
-			if (bcount++>3) {
+			
+			camera -= 0.002*camera_orient.z; /* move forward */
+			
+			if (bcount%10==5) {
+				oglDumpScreen();
+			}
+			if (bcount++>60) {
 				fclose(f);
 				int err=system("cat bench.txt");
-				oglDumpScreen();
 				exit(err);
 			}
+			// Warp over time for image dump
+			cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
 		}
 		else { /* not a benchmark, just an ordinary run */
 			char str[100];
