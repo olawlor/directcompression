@@ -340,33 +340,10 @@ void main(void) {
 	// Compute intersection ranges with all our geometry
 	span auroraL=span_sphere(sphere(vec3(0.0,0.0,0.0),85.0*km+1.0),r);
 	span auroraH=span_sphere(sphere(vec3(0.0,0.0,0.0),300.0*km+1.0),r);
-	
+
 	// Planet itself
 	float planet_t=intersect_sphere(sphere(vec3(0.0,0.0,0.0),1.0),r);
 	vec3 planet=vec3(0.0,0.0,0.0);
-	if (planet_t<miss_t) { /* hit the planet */
-		vec3 p=ray_at(r,planet_t);
-		planet=vec3(0.5,0.45,0.4)*sample_planet(p);//*vec3(texture2D(clouds,vec2(30.0*p)));
-	}
-	else { /* missed planet, hit stars */
-		vec3 dir=r.D; dir.x=-dir.x; /* gotta flip it inside out */
-		vec4 starcube=textureCube(stars,dir); 
-		float s=length(vec3(starcube));
-		starcube*=pow(s,4); /* tweak star contrast */
-		planet=0.1*vec3(starcube);
-	}
-	
-	vec3 cloud=vec3(0.0,0.0,0.0);
-	/*
-	float cloud_t=intersect_sphere(sphere(vec3(0.0,0.0,0.0),10.0*km+1.0),r);
-	if (cloud_t<miss_t) {
-		vec3 p=ray_at(r,cloud_t);
-		float c=float(texture2D(clouds,vec2(p)));
-		c+=float(texture2D(clouds,vec2(3.7*p.x,2.0*p.y+0.3*p.z)));
-		c=c*2.0-2.0;
-		if (c>0.0) cloud=vec3(0.05*c);
-	}
-	*/
 	
 	// Atmosphere
 	span airspan=span_sphere(sphere(vec3(0.0,0.0,0.0),75.0*km+1.0),r);
@@ -397,20 +374,34 @@ void main(void) {
 	vec3 aurora=vec3(0.0);
 	if (auroraL.l>=miss_t) 
 	{ // SKIM: we miss the lower boundary
-		aurora=sample_aurora(r,span(auroraH.l,auroraH.h)); /* upper shell */
+		aurora=sample_aurora(r,span(auroraH.l,auroraH.h)); // upper shell
 	}
 	else if (planet_t>=miss_t) 
 	{ // BOTH: second stretch of pre-air aurora on far side of atmosphere
-		planet+=sample_aurora(r,span(auroraL.h,auroraH.h)); /* pre atmosphere */
-		aurora=sample_aurora(r,span(auroraH.l,auroraL.l)); /* post atmosphere */
+		planet+=sample_aurora(r,span(auroraL.h,auroraH.h)); // pre atmosphere
+		aurora=sample_aurora(r,span(auroraH.l,auroraL.l)); // post atmosphere
 	} 
 	else 
 	{ // MAIN: common planet-hitting case
-		aurora=sample_aurora(r,span(auroraH.l,auroraL.l)); /* post atmosphere */
+		aurora=sample_aurora(r,span(auroraH.l,auroraL.l)); // post atmosphere
 	}
 	
-	vec3 total=aurora + airInscatter*airColor + airTransmit*(planet+cloud);
+	vec3 total=aurora + airInscatter*airColor + airTransmit*planet;
 	
 	// Must delay tone mapping until the very end, so we can sum pre and post atmosphere parts... 
 	gl_FragColor = vec4(tonemap(total),1.0);
+	
+	
+	if (planet_t<miss_t) { // hit the planet
+		vec3 p=ray_at(r,planet_t);
+		planet=vec3(0.5,0.45,0.4)*sample_planet(p);// vec3(texture2D(clouds,vec2(30.0*p)));
+	}
+	else { // missed planet, hit stars
+		vec3 dir=r.D; dir.x=-dir.x; // gotta flip it inside out
+		vec4 starcube=textureCube(stars,dir); 
+		float s=length(vec3(starcube));
+		starcube*=pow(s,4); // tweak star contrast
+		planet=0.1*vec3(starcube);
+	}
+	gl_FragColor = gl_FragColor + airTransmit*vec4(planet,1.0);	
 }

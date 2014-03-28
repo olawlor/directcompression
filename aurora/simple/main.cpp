@@ -61,12 +61,14 @@ unsigned int loadCubemap(const std::string &dir) {
 
 void display(void) 
 {
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(GL_TRUE); // turn on Z writes
-	glEnable(GL_BLEND);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
 	
 	glClearColor(0.4,0.5,0.7,0.0); // background color
 	glClear(GL_COLOR_BUFFER_BIT + GL_DEPTH_BUFFER_BIT);
+	
+	glFinish();
+	double start_time=glutGet(GLUT_ELAPSED_TIME)*0.001;
 	
 	glViewport(0,0, glutGet(GLUT_WINDOW_WIDTH),glutGet(GLUT_WINDOW_HEIGHT));
 	
@@ -84,8 +86,6 @@ void display(void)
 	
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity(); // flush any ancient matrices
-	
-	double time_in_seconds=glutGet(GLUT_ELAPSED_TIME)*0.001;
 	
 	/* Build the pixel shader */
 	static GLhandleARB prog=makeProgramObjectFromFiles(
@@ -155,7 +155,7 @@ void display(void)
 	read_imgs=false;
 	glActiveTexture(GL_TEXTURE0);
 	
-	glFastUniform1f(prog,"time_uniform",0.001*glutGet(GLUT_ELAPSED_TIME));
+	glFastUniform1f(prog,"time_uniform",start_time);
 	
 	// Only draw one set of faces, to avoid drawing raytraced geometry twice.
 	//   (front side may get clipped if you're inside the object, so draw back)
@@ -175,21 +175,18 @@ void display(void)
 	static double frame_interval=1.0/24; /* time between movie frames, seconds */
 	if (key_down['p'] || movie_mode || key_down['m']) {
 		if (movie_mode) {
-			if (last_movieframe+frame_interval<time_in_seconds) {
+			if (last_movieframe+frame_interval<start_time) {
 				oglDumpScreen();
 				last_movieframe+=frame_interval;
 			}
 		} else {
 			oglDumpScreen();
-			last_movieframe=time_in_seconds;
+			last_movieframe=start_time;
 		}
 		key_down['p']=false; /* p is momentary print-screen; m is for movie */
 		if (key_down['m']) movie_mode=1;
 		if (key_down['p']) movie_mode=0;
 	} 
-	glutPostRedisplay(); // continual animation
-	
-	glutSwapBuffers();
 
 /* Estimate framerate */
 	glFinish();
@@ -197,10 +194,17 @@ void display(void)
 	static int framecount=0, last_framecount=0;
 	framecount++;
 	double cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
+	
+	
+	glutPostRedisplay(); // continual animation
+	glutSwapBuffers(); //<- waits for VSYNC?
+	
+	static double total_time=0.0;
+	total_time+=cur_time-start_time;
 	if (cur_time>0.1+last_time) 
 	{ // every tenth of a second, estimate fps
-		double time=cur_time-last_time;
-		double time_per_frame=time/(framecount-last_framecount);
+		double time_per_frame=total_time/(framecount-last_framecount);
+		total_time=0.0;
 		if (benchmode==1) {
 			static FILE *f=fopen("bench.txt","w");
 			static int bcount=0;
@@ -220,8 +224,6 @@ void display(void)
 				int err=system("cat bench.txt");
 				exit(err);
 			}
-			// Warp over time for image dump
-			cur_time=0.001*glutGet(GLUT_ELAPSED_TIME);
 		}
 		else { /* not a benchmark, just an ordinary run */
 			char str[100];
