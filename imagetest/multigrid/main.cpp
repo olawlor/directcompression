@@ -22,7 +22,7 @@ OpenGL Extensions Wrangler:  for gl...ARB extentions.  Must call glewInit after 
 
 
 const float km=1.0/6371.0; // convert kilometers to render units (planet radii)
-int benchmode=0, dumpmode=0;
+int benchmode=0, dumpmode=0, errormetric=0;
 float bench_target=0.0;
 double interval_time=1.0; // seconds to show each image
 
@@ -129,9 +129,10 @@ public:
 	 FIXME: inputs & sampling part of shader should be parameterized
 	*/
 	void render(GLhandleARB prog) {
-		last_render=0.0; last_error1=0.0; last_error2=0.0;
 		glFastUniform1f(prog,"benchmode",(float)benchmode);
+		glFastUniform1f(prog,"errormetric",(float)errormetric);
 		
+		last_render=0.0; last_error1=0.0; last_error2=0.0;
 		glFastUniform1f(prog,"multigridCoarsest",1.0f);
 		fb[levels-1]->bind();
 		screen_quad(1.0f);
@@ -216,13 +217,15 @@ void display(void)
 	
 	
 	float pixelScale=1.0/(wid*ht);
-	static double prev_err=-1.0, prev_thresh=-1.0;
 	if (benchmode==2) {
+		static double prev_err=-1.0, prev_thresh=-1.0;
+		static double slopelimit=0.5, slopemul=1.0;
+	
 		// seeking a target render rate
 		float render=last_render*pixelScale;
 		float err=render-bench_target;
 		
-		static int leash=20;
+		static int leash=50;
 		if (fabs(err)<0.001	|| leash--<=0) { // we hit it!
 			printf("Target	%f	%f	%f	%f\n",
 				threshold,
@@ -245,10 +248,21 @@ void display(void)
 			if (next_thresh<0) next_thresh=0.001;
 			printf(" -> new threshold %f\n",next_thresh);
 		} else { // subsequent step: secant method
+			if (err*prev_err>0) 
+			{ // stepping same direction-- go faster to get there
+				slopelimit*=1.1;
+				slopemul*=1.3;
+			} 
+			else 
+			{ // stepping in opposite direction--avoid oscillations
+				if (slopelimit>0.5) slopelimit=0.5;
+				if (slopemul>1.0) slopemul=1.0;
+				slopelimit*=0.7;
+			}
+		
 			float slope=(threshold-prev_thresh)/(err-prev_err);
-			float limit=1.0;
-			if (slope>limit) slope=limit;
-			if (slope<-limit) slope=-limit;
+			if (slope>slopelimit) slope=slopelimit;
+			if (slope<-slopelimit) slope=-slopelimit;
 			next_thresh=threshold-err*slope;
 			printf(" slope %f -> new threshold %f\n",
 				slope,next_thresh);
@@ -325,6 +339,7 @@ int main(int argc,char *argv[])
 	for (int argi=1;argi<argc;argi++) {
 		if (0==strcmp(argv[argi],"-bench")) { benchmode=1; interval_time=0.01; }
 		else if (0==strcmp(argv[argi],"-target")) { benchmode=2; bench_target=atof(argv[++argi]); }
+		else if (0==strcmp(argv[argi],"-metric")) { errormetric=atoi(argv[++argi]); }
 		else if (0==strcmp(argv[argi],"-img")) { source_image=argv[++argi]; }
 		else if (0==strcmp(argv[argi],"-pixelbench")) benchmode=2;
 		else if (2==sscanf(argv[argi],"%dx%d",&w,&h)) {}

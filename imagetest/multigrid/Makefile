@@ -60,7 +60,7 @@ OBJS=main.o \
 all: $(DEST)
 
 # Build main from object files
-$(DEST): $(OBJS)
+$(DEST): $(OBJS) 
 	$(CCC) $(CFLAGS) $(OBJS) $(SYSLIBS) -o $(DEST)
 
 clean:

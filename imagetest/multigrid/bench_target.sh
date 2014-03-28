@@ -16,7 +16,7 @@ do
 	
 	echo "---- $image ----"
 	imshort=`basename $image`
-	./main -target $target -img "$image" | tee bench_target.txt || exit 1
+	optirun ./main -target $target -img "$image" -metric `cat metric_value` | tee bench_target.txt || exit 1
 	cat bench_target.txt >> bench_target_run.txt
 	grep "^Target" bench_target.txt | sed -e 's/Target/'$imshort'/' >> bench_target_log.txt
 	convert -flip image00000.ppm bench_target_img/$imshort

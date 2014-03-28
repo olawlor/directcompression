@@ -6,9 +6,9 @@ set nologscale
 #set key right top
 set nokey
 set xlabel "Samples Per Finished Pixel"
-set ylabel "Average Absolute Color Error"
-set yrange [0.0:0.1]
-set xrange [0:2]
+set ylabel "Average Absolute Color Error (%)"
+set yrange [0.0:8.0]
+set xrange [0:1]
 
 set term postscript eps color 22
 #set term postscript eps monochrome 22
@@ -21,7 +21,7 @@ plot '
 sep=""
 for f in `echo bench_multi/*`
 do
-	gp="$gp $sep  \"$f\" using 3:4 title \""`basename $f`"\" with lines"
+	gp="$gp $sep  \"$f\" using 3:(100*\$4) title \""`basename $f`"\" with lines"
 	sep=","
 done
 echo "$gp" | gnuplot
