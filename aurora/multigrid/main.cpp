@@ -19,7 +19,7 @@ OpenGL Extensions Wrangler:  for gl...ARB extentions.  Must call glewInit after 
 
 const float km=1.0/6371.0; // convert kilometers to render units (planet radii)
 int benchmode=0;
-double threshold=0.2; // total color error to allow before subdividing
+double threshold=0.1; // total color error to allow before subdividing
 
 /** SOIL **/
 #include "soil/SOIL.h" /* Simple OpenGL Image Library, www.lonesock.net/soil.html (plus Dr. Lawlor
@@ -190,6 +190,9 @@ void display(void)
 	
 	if (benchmode==2) {oglPixelBench(display,64,4); return;}
 	
+	if (key_down['t']) { threshold*=2.0; key_down['t']=false; }
+	if (key_down['y']) { threshold*=0.5; key_down['y']=false; }
+	
 	static int movie_mode=0;
 	static double last_movieframe=0.0;
 	static double frame_interval=1.0/24; /* time between movie frames, seconds */
@@ -207,6 +210,9 @@ void display(void)
 		if (key_down['m']) movie_mode=1;
 		if (key_down['p']) movie_mode=0;
 	} 
+	
+	
+	
 
 /* Estimate framerate */
 	glFinish();
@@ -247,14 +253,15 @@ void display(void)
 		}
 		else { /* not a benchmark, just an ordinary run */
 			char str[100];
-			sprintf(str,"Aurora Renderer: %.1f fps, %.1f ms/frame (%.1f km)",
+			sprintf(str,"Aurora Renderer: %.1f fps, %.1f ms/frame (%.1f km, threshold %.2f)",
 				1.0/time_per_frame,1.0e3*time_per_frame,
-				(altitude-1.0)/km);
+				(altitude-1.0)/km,
+				threshold);
 #ifndef MPIGLUT_H
 			printf("%s\n",str);
 
 			glutSetWindowTitle(str);
-
+			if (false)
 			printf("Minicam: camera=vec3(%f,%f,%f); camera_orient.z=vec3(%f,%f,%f);\n",
 				VEC3_TO_XYZ(camera),
 				VEC3_TO_XYZ(camera_orient.z));

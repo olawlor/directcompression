@@ -332,34 +332,21 @@ float atmosphere_thickness(vec3 start,vec3 dir,float tstart,float tend) {
 uniform samplerCube stars;
 uniform sampler2D clouds;
 
-
-void sample(bool lastPass) {
+/**
+ Render the scene, either because we predict this ray is needed (doSample),
+ or because this is the final composite step (lastPass).
+ 
+ Write the result to gl_FragColor.
+*/
+void sample(bool doSample,bool lastPass) {
 	// Start with a camera ray
 	ray r=ray(C,normalize(G-C)); // points from camera toward proxy
 	
-	// Compute intersection ranges with all our geometry
-	span auroraL=span_sphere(sphere(vec3(0.0,0.0,0.0),85.0*km+1.0),r);
-	span auroraH=span_sphere(sphere(vec3(0.0,0.0,0.0),300.0*km+1.0),r);
+	vec3 planet=vec3(0.0,0.0,0.0); 
 
 	// Planet itself
 	float planet_t=intersect_sphere(sphere(vec3(0.0,0.0,0.0),1.0),r);
-	vec3 planet=vec3(0.0,0.0,0.0);
 
-/*
-	if (planet_t<miss_t) { // hit the planet
-		vec3 p=ray_at(r,planet_t);
-		planet=vec3(0.5,0.45,0.4)*sample_planet(p);// vec3(texture2D(clouds,vec2(30.0*p)));
-	}
-	else { // missed planet, hit stars
-		vec3 dir=r.D; dir.x=-dir.x; // gotta flip it inside out
-		vec4 starcube=textureCube(stars,dir); 
-		float s=length(vec3(starcube));
-		starcube*=pow(s,4); // tweak star contrast
-		planet=0.1*vec3(starcube);
-	}
-	
-	vec3 cloud=vec3(0.0,0.0,0.0);
-	
 	// Atmosphere
 	span airspan=span_sphere(sphere(vec3(0.0,0.0,0.0),75.0*km+1.0),r);
 	if (airspan.h>planet_t) {airspan.h=planet_t;} // looking down at planet
@@ -374,8 +361,12 @@ void sample(bool lastPass) {
 	float airInscatter=1.0-airTransmit; // fraction added by atmosphere
 	
 	// add: thin-shell of airglow
-*/
-	
+
+if (doSample) { // expensive aurora calculation (BULK of cost!)
+	// Compute intersection ranges with all our geometry
+	span auroraL=span_sphere(sphere(vec3(0.0,0.0,0.0),85.0*km+1.0),r);
+	span auroraH=span_sphere(sphere(vec3(0.0,0.0,0.0),300.0*km+1.0),r);
+
 	/* Aurora: just getting the sampling ranges right is tricky!
 	
 		SKIM only hits upper aurora shell:
@@ -401,12 +392,29 @@ void sample(bool lastPass) {
 	{ // MAIN: common planet-hitting case
 		aurora=sample_aurora(r,span(auroraH.l,auroraL.l)); // post atmosphere
 	}
-	vec3 total=aurora + planet;
 	
-	//vec3 total=aurora + airInscatter*airColor + airTransmit*(planet+cloud);
+	vec3 total=aurora + airInscatter*airColor + airTransmit*planet;
 	
 	// Must delay tone mapping until the very end, so we can sum pre and post atmosphere parts... 
 	gl_FragColor = vec4(tonemap(total),1.0);
+}
+
+if (lastPass) { // planet and stars only on last pass
+	if (planet_t<miss_t) { // hit the planet
+		vec3 p=ray_at(r,planet_t);
+		planet=vec3(0.5,0.45,0.4)*sample_planet(p);// vec3(texture2D(clouds,vec2(30.0*p)));
+	}
+	else { // missed planet, hit stars
+		vec3 dir=r.D; dir.x=-dir.x; // gotta flip it inside out
+		vec4 starcube=textureCube(stars,dir); 
+		float s=length(vec3(starcube));
+		starcube*=pow(s,4); // tweak star contrast
+		planet=0.1*vec3(starcube);
+	}
+	
+	gl_FragColor = gl_FragColor + airTransmit*vec4(planet,1.0);
+}
+
 }
 
 
@@ -448,8 +456,25 @@ bool multigridCoarseFits()
 	vec3 BC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,-del.y)));
 	vec3 BR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,-del.y)));
 
+/*
 	// Trivial P1 version, just to get running:
 	if (length(MC-TC)+length(MC-ML)+length(MC-MR)+length(MC-BC)>threshold)
+		return false; // need a sample here
+*/
+	// P3 8-neighbor check
+	vec3 A=MC; // constant term
+	vec3 X=(MR-ML)*0.5; // x dependence
+	vec3 Y=(TC-BC)*0.5; // y dependence
+	if (
+		length(A-X - ML)+
+		length(A+X - MR)+
+		length(A-Y - BC)+
+		length(A+Y - TC)+
+		length(A-X-Y - BL)+
+		length(A+X-Y - BR)+
+		length(A-X+Y - TL)+
+		length(A+X+Y - TR)
+		>threshold)
 		return false; // need a sample here
 
 	gl_FragColor = texture2D(multigridCoarserTex,texcoords); // fallback: bilinear
@@ -459,9 +484,18 @@ bool multigridCoarseFits()
 
 
 void main(void) {
-	if (multigridCoarsest==1.0 || !multigridCoarseFits()) 
-	{ // take expensive samples
-		sample(multigridCoarsest==0.0); // writes gl_FragColor
+	bool doSample=false;
+	if (multigridCoarsest==1.0) {
+		doSample=true; // initial pass: render everything
+	}
+	else { // check if coarser grid can handle it (if so, write to glFragColor)
+		doSample=!multigridCoarseFits(); // may write gl_FragColor
+	}
+	
+	bool lastPass=(multigridCoarsest==0.0);
+	if (doSample || lastPass)
+	{ // Run user's sampling function
+		sample(doSample,lastPass); // writes gl_FragColor
 	}
 }
 
