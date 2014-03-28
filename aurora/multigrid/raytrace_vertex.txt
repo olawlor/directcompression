@@ -1,0 +1,7 @@
+// Nearly trivial GLSL vertex shader for per-pixel raytracing.
+varying vec3 G; // proxy geometry location, world coordinates
+void main(void) {
+	vec4 mv=gl_ModelViewMatrix*gl_Vertex; // apply modelview to get to world coords
+	G=vec3(mv);
+	gl_Position = gl_ProjectionMatrix*mv;
+}
