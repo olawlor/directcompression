@@ -5,6 +5,8 @@
 const float M_PI=3.1415926535;
 
 const float km=1.0/6371.0; // convert kilometers to render units (planet radii)
+const float dt=1.0*km; /* sampling rate for aurora: fine sampling gets *SLOW* */
+
 const float miss_t=100.0; // t value for a miss
 const float min_t=0.000001; // minimum acceptable t value
 uniform float time_uniform; // time in seconds
@@ -108,7 +110,7 @@ vec3 deposition_function(float height)
 
 // Apply nonlinear tone mapping to final summed output color
 vec3 tonemap(vec3 color) {
-	float len=length(color);
+	float len=length(color)+0.000001;
 	//return color/len*(1.0-exp(-len)); /* new length only asymptotically approaches 1 */
 	return color*pow(len,1.0/2.2-1.0); /* convert to sRGB: scale by len^(1/2.2)/len */
 	//return color*pow(len,1.0/3.0-1.0); // for printing: gamma of 3.0
@@ -141,7 +143,6 @@ vec3 sample_aurora(ray r,span s) {
 	float pathlength=s.h-s.l; // ray span length
 	vec3 auroraglow=0.0*pathlength*vec3(0,1,0); // generalized glow (overall in layer)
 	
-	const float dt=2.0*km; /* sampling rate for aurora: fine sampling gets *SLOW* */
 	const float aurorascale=dt/(30.0*km); /* scale factor: samples at dt -> screen color */
 	
 	/* Sum up aurora light along ray span */
