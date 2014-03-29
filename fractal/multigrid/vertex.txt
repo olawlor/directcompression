@@ -1,0 +1,26 @@
+// GL Shading Language version 1.0 Vertex Shader
+//  Orion Sky Lawlor, olawlor@acm.org, 2006/08/31 (Public Domain)
+
+// C++/vertex shader interface
+uniform float center_x, center_y, zoom, aspect;
+uniform mat4 mF, subwindow;
+
+// Vertex/fragment shader interface:
+varying vec4 mandConst; // Mandelbrot constant
+
+// Input: gl_Vertex.  Output: gl_Position.
+void main(void) 
+{
+	// Vertex positions come from the C program:
+	vec4 v = gl_Vertex;
+	gl_Position = subwindow * v;
+	// gl_Position is where onscreen the vertex will be drawn.
+	
+	// We'll set mandel Constant
+	mandConst=vec4(
+		// X and Y: direct real and imaginary values
+		2.0*v.x*aspect*zoom+center_x,2.0*v.y*zoom+center_y,
+		// Z and W: onscreen location, for multiprecision add per-pixel
+		4.0*(gl_MultiTexCoord0.x-0.5)*aspect,
+		4.0*(gl_MultiTexCoord0.y-0.5)); 
+}

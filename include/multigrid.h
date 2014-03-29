@@ -1,8 +1,14 @@
-
-#include "ogl/framebuffer.h"
+/**
+  Simple demo multigrid rendering class.
+  
+  Dr. Orion Lawlor, lawlor@alaska.edu, 2014-03-28 (Public Domain)
+*/
+#include "ogl/framebuffer.h"  // we use textures and framebuffer objects from here
 #include "ogl/framebuffer.cpp"
 #include "ogl/util.cpp" // for check and exit functions
 #include "ogl/fast_mipmaps.c"
+
+#include "ogl/glsl.h" // glFastUniform GLSL utilities
 
 /**
  This proxy geometry renderer must draw all the pixels in the viewport.
@@ -33,7 +39,13 @@ class multigrid_renderer {
 public:
 	int wid,ht; // size of full resolution image
 	enum {msaa=0}; // levels of multisample antialiasing: 4^msaa samples per pixel.
-	enum {levels=3+msaa}; // multigrid levels are from 0..levels-1.  level==msaa is the full resolution image
+	enum {levels=
+#if multigrid_levels
+	multigrid_levels
+#else
+	3
+#endif
+		+msaa}; // multigrid levels are from 0..levels-1.  level==msaa is the full resolution image
 	oglFramebuffer *fb[levels];
 	
 	multigrid_renderer(int wid_,int ht_) 
@@ -82,4 +94,17 @@ public:
 		glActiveTexture(GL_TEXTURE0);
 	}
 };
+
+/**
+ Allocate a static multigrid_renderer for the current GLUT window.
+ Resize the renderer when the window size changes.
+*/
+#define make_multigrid_renderer \
+	static multigrid_renderer *renderer=NULL; \
+	int mg_wid=glutGet(GLUT_WINDOW_WIDTH), mg_ht=glutGet(GLUT_WINDOW_HEIGHT); \
+	if (!renderer || renderer->wid!=mg_wid || renderer->ht!=mg_ht) { \
+		delete renderer; \
+		renderer=new multigrid_renderer(mg_wid,mg_ht); \
+	}
+
 

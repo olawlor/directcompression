@@ -48,6 +48,9 @@ public:
 	/** Make a GLSL program from this vertex and fragment shader. 
 	  This object keeps the shaders, and will delete them when done. */
 	oglProgramObject(oglShaderObject *v,oglShaderObject *f);
+
+	/// Get our handle (e.g., for glUniform call)
+	GLhandleARB get(void) const {return prog;}
 	
 	/** Set the uniform u to this value v.  Works for ints,floats, vectors, and matrices */
 	inline void set(const char *u_name,int v) 

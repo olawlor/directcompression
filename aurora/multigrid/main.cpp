@@ -60,9 +60,6 @@ unsigned int loadCubemap(const std::string &dir) {
 #include <vector>
 
 #include "multigrid.h" /* multigrid renderer */
-multigrid_renderer *renderer=0;
-
-
 class sphereProxy : public multigrid_proxy {
 public:
 	void draw() {
@@ -177,12 +174,7 @@ void display(void)
 	glBlendFunc(GL_ONE,GL_ONE_MINUS_SRC_ALPHA); // premultiplied alpha
 	
 	
-	
-	int wid=glutGet(GLUT_WINDOW_WIDTH), ht=glutGet(GLUT_WINDOW_HEIGHT);
-	if (!renderer || renderer->wid!=wid || renderer->ht!=ht) {
-		delete renderer;
-		renderer=new multigrid_renderer(wid,ht);
-	}
+	make_multigrid_renderer;
 	sphereProxy proxy;
 	renderer->render(prog,threshold,proxy);
 	

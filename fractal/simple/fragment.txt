@@ -1,0 +1,150 @@
+// GL Shading Language version 1.0 Fragment Shader
+//  Orion Sky Lawlor, olawlor@acm.org, 2014/03/28 (Public Domain)
+
+
+// The crazy add-then-subtract stuff below is for multi precision.
+// NVIDIA optimizes it away unless you do this, and add the "precise" keyword below.
+#ifdef GL_ARB_gpu_shader5
+
+#extension GL_ARB_gpu_shader5 : enable
+#pragma optionNV(fastmath off)
+
+#else
+
+#define precise /* null out the keyword for old systems that don't support gpu_shader5 */
+
+#endif
+
+
+uniform float mandelfunk1,mandelfunk2;
+
+uniform float time;
+
+// Vertex/fragment shader interface:
+//   This is the mandelbrot constant
+varying vec4 mandConst; 
+
+
+//  From NVIDIA CUDA samples, 2_Graphics/Mandelbrot, modified for GLSL
+//  See also: https://www.thasler.org/blog/?p=93
+// Double single functions based on DSFUN90 package:
+// http://crd.lbl.gov/~dhbailey/mpdist/index.html
+struct double_single {
+	precise float a0,a1; // high and low order halves of extended precision number
+};
+
+// This function sets the DS number equal to the floating point number B.
+double_single dseq(float b)
+{
+	double_single ret;
+	ret.a0 = float(b);
+	ret.a1 = 0.0; // float(b - ret.a0);
+	return ret;
+} // dsdcp
+
+// This function sets the DS number equal to the floating point number B (high) and C (low).
+double_single dseq(float b,float c)
+{
+	double_single ret;
+	ret.a0 = b;
+	ret.a1 = c;
+	return ret;
+} // dsdcp
+
+
+// This function computes c = a + b.
+double_single dsadd(double_single a,double_single b)
+{
+    // Compute dsa + dsb using Knuth's trick.
+    float t1 = a.a0 + b.a0;
+    float e = t1 - a.a0;
+    float t2 = float(float(b.a0 - e) + float(a.a0 - float(t1 - e))) + a.a1 + b.a1;
+
+    // The result is t1 + t2, after normalization.
+    double_single ret;
+    ret.a0 = e = t1 + t2;
+    ret.a1 = t2 - float(e - t1);
+    return ret;
+} // dsadd
+
+// This function computes c = a - b.
+double_single dssub(double_single a,double_single b)
+{
+    // Compute dsa - dsb using Knuth's trick.
+    float t1 = a.a0 - b.a0;
+    float e = t1 - a.a0;
+    float t2 = float(float(-b.a0 - e) + float(a.a0 - float(t1 - e))) + a.a1 - b.a1;
+
+    // The result is t1 + t2, after normalization.
+    double_single ret;
+    ret.a0 = e = t1 + t2;
+    ret.a1 = t2 - float(e - t1);
+    return ret;
+} // dssub
+
+// This function multiplies DS numbers A and B to yield the DS product C.
+double_single dsmul(double_single a,double_single b)
+{
+    // This splits dsa(1) and dsb(1) into high-order and low-order words.
+    float cona = a.a0 * 8193.0f;
+    float conb = b.a0 * 8193.0f;
+    float sa1 = cona - float(cona - a.a0);
+    float sb1 = conb - float(conb - b.a0);
+    float sa2 = a.a0 - sa1;
+    float sb2 = b.a0 - sb1;
+
+    // Multilply a0 * b0 using Dekker's method.
+    float c11 = a.a0 * b.a0;
+    float c21 = float(float(float(sa1 * sb1 - c11) + sa1 * sb2) + sa2 * sb1) + sa2 * sb2;
+
+    // Compute a0 * b1 + a1 * b0 (only high-order word is needed).
+    float c2 = a.a0 * b.a1 + a.a1 * b.a0;
+
+    // Compute (c11, c21) + c2 using Knuth's trick, also adding low-order product.
+    float t1 = c11 + c2;
+    float e = t1 - c11;
+    float t2 = float(float(c2 - e) + float(c11 - float(t1 - e))) + c21 + a.a1 * b.a1;
+
+    // The result is t1 + t2, after normalization.
+    double_single c;
+    c.a0 = e = t1 + t2;
+    c.a1 = t2 - float(e - t1);
+    return c;
+} // dsmul
+
+
+
+uniform float center_x, center_y, center_low_x, center_low_y, zoom;
+
+
+// Input: from vertex.txt.  Output: gl_FragColor.
+void main(void)
+{
+	precise double_single zr=dseq(0.0), zi=dseq(0.0);
+	
+	// Low-precision version:
+	// double_single cr=dseq(mandConst.x), ci=dseq(mandConst.y);
+	
+	// High-precision version:
+	precise double_single cr=dsadd(dseq(mandConst.z*zoom),dseq(center_x,center_low_x));
+	precise double_single ci=dsadd(dseq(mandConst.w*zoom),dseq(center_y,center_low_y));
+	
+	int i;
+	for (i=0;i<255;i++) {
+		double_single nzr=dssub(dsmul(zr,zr),dsmul(zi,zi));
+		zi=dsmul(zr,zi); zi=dsadd(zi,zi); // *2.0
+		
+		zr=dsadd(nzr,cr);
+		zi=dsadd(zi,ci);
+		
+		if (zr.a0*zr.a0 + zi.a0*zi.a0 > 4.0) break;
+	}
+	
+	// Output cool sinusoidal colors
+	gl_FragColor=vec4(
+		0.5*sin(0.014*float(i))+fract(0.12*time), /* Red */
+		0.5*sin(0.01*float(i))+fract(0.2*time), /* Green */
+		fract(float(i)*(1.0/128.0)+0.15*time), // 0.1*(z.x*z.x + z.y*z.y), /* Blue */
+		0.999 /* Alpha */
+	);
+}
