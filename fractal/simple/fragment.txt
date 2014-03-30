@@ -8,6 +8,7 @@
 
 #extension GL_ARB_gpu_shader5 : enable
 #pragma optionNV(fastmath off)
+#pragma optionNV(fastprecision off)
 
 #else
 
@@ -142,8 +143,8 @@ void main(void)
 	
 	// Output cool sinusoidal colors
 	gl_FragColor=vec4(
-		0.5*sin(0.014*float(i))+fract(0.12*time), /* Red */
-		0.5*sin(0.01*float(i))+fract(0.2*time), /* Green */
+		0.5*sin(0.014*float(i))+0.5*fract(0.12*time), /* Red */
+		0.5*sin(0.01*float(i))+0.5*fract(0.2*time), /* Green */
 		fract(float(i)*(1.0/128.0)+0.15*time), // 0.1*(z.x*z.x + z.y*z.y), /* Blue */
 		0.999 /* Alpha */
 	);
