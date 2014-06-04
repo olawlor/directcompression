@@ -1,0 +1,430 @@
+/********************* Conetracer utilities ***************/
+
+/**
+circleSliceArea:
+Return the area of:
+	 the portion of a circle, centered at the origin with radius 1, 
+	 which has x-coordinate greater than frac.
+	 -1<=frac<=1
+
+i.e. return the area in #'s:
+
+<pre>
+    y
+ 
+    ^
+    |<---- 1 ---->|
+_--------___
+    |       -_         
+    |        |\_        
+    |        |##\         
+    |        |###\       
+    |        |####|       
+    |        |####|    
+----+--------+####+-----> x 
+    |        |####| 
+    |        |####|       
+    |        |###/       
+    |        |##/        
+    |        |/        
+_   |   ___--         
+ -------
+ -->|  frac  |<--
+</pre>
+
+This value is also equal to the integral
+      / 1
+      |
+      | 2*sqrt(1-x^2) dx
+      |
+      / frac
+(multiply by r^2 to get the area for a non-unit circle)
+*/
+float circleSliceArea(float frac)
+{
+	float half_pi=3.14159265358979/2.0;
+	return (
+		half_pi-
+		frac*sqrt((1.0-frac)*(1.0+frac))-
+		asin(frac)
+		);
+}
+
+struct circleOverlap_t {
+	float f1; // fraction of circle 1 overlapped by circle 2
+	float f2; // fraction of circle 2 overlapped by circle 1
+};
+
+/*circleOverlap:
+Given two circles with radii 1.0 and r2, 
+with centers separated by a distance d, return 
+the fraction f1 of circle 1 overlapped by circle 2, and 
+the fraction f2 of circle 2 overlapped by circle 1.
+*/
+//(Version with r1 not fixed to 1.0)
+circleOverlap_t circleOverlap(float r1,float r2,float d)
+{
+	circleOverlap_t r;
+	if (r1+r2<=d) //Circles do not overlap at all
+		{r.f1=0.0; r.f2=0.0;}
+	else if (d+r2<=r1) //Circle 2 entirely in circle 1
+		{r.f1=r2*r2/(r1*r1); r.f2=1.0;}
+	else if (d+r1<=r2) //Circle 1 entirely in circle 2
+		{r.f1=1.0; r.f2=r1*r1/(r2*r2);}
+	else {
+	//Circles partially overlap, creating a crescent shape
+	//Compute the area of the circles
+		float pi=3.14159265358979;
+		float area1=r1*r1*pi;
+		float area2=r2*r2*pi;
+	//Compute area of overlap Region
+		float alpha=(r1*r1+d*d-r2*r2)/(2.0*d);
+		float beta=d-alpha;
+		float area_overlap=r1*r1*circleSliceArea(alpha/r1)+
+		                  r2*r2*circleSliceArea(beta/r2);
+		r.f1=area_overlap/area1;
+		r.f2=area_overlap/area2;
+	}
+	return r;
+}
+
+/*  //(In this verion, implicitly r1 is 1.0)
+circleOverlap_t circleOverlap(float r2,float d)
+{
+	float f1,f2;
+	if (1.0+r2<=d) //Circles do not overlap at all
+		{f1=0.0;f2=0.0;}
+	else if (d+r2<=1.0) //Circle 2 entirely in circle 1
+		{f1=r2*r2;f2=1.0;}
+	else if (d+1.0<=r2) //Circle 1 entirely in circle 2
+		{f1=1.0;f2=1.0/(r2*r2);}
+	else {
+	//Circles partially overlap, creating a crescent shape
+	//Compute the area of the circles
+		float invPi=1.0/3.14159265358979;
+		float area2=r2*r2;
+	//Compute area of overlap Region
+		float alpha=(1.0+d*d-r2*r2)/(2.0*d);
+		float beta=d-alpha;
+		float area_overlap=circleSliceArea(alpha)+
+		                  area2*circleSliceArea(beta/r2);
+		f1=area_overlap*invPi;
+		f2=area_overlap/area2*invPi;
+	}
+	return circleOverlap_t(f1,f2);
+}
+*/
+
+
+
+
+
+
+
+/***************************** shared vertex/fragment code *********************/
+uniform vec3 camera; // world coordinates of camera
+varying vec4 myColor;
+varying vec3 location; // world coordinates of our pixel
+uniform float time; // time, in seconds
+
+
+/* Raytracer framework */
+const float invalid_t=1.0e3; // far away
+const float close_t=1.0e-2; // too close (behind head, self-intersection, etc)
+
+/* This struct describes a ray */
+struct ray_t {
+	vec3 C; // start point of ray (typically the camera, hence the name C)
+	vec3 D; // direction of ray 
+	
+	float r_start; // radius of cone at start of ray
+	float r_per; // change in radius as a function of (unit) ray parameter T
+};
+
+/* Return the location along this ray at this t value. */
+vec3 ray_at(ray_t ray,float t) {
+	return ray.C+t*ray.D;
+}
+
+/* Return the radius of this ray at this t value. 
+   The "abs" allows camera rays to narrow down, then expand again.
+*/
+float ray_radius(ray_t ray,float t) {
+	return ray.r_start + abs(t*ray.r_per);
+}
+
+
+
+/* This struct describes how a surface looks */
+struct surface_hit_t {
+	float shiny; /* 0: totally matte surface; 1: big phong highlight */
+	vec3 reflectance; /* diffuse color */
+	float mirror; /* proportion of perfect mirror specular reflection (0.0 for non-mirror) */
+	float density; /* if <1.0, object is volume rendered */
+};
+
+
+
+/* This struct describes everything we know about a ray-object hit. */
+struct ray_hit_t {
+	vec3 P; /* world coords location of hit */
+	vec3 N; /* surface normal of the hit */
+	float t; /* ray t value at hit (or invalid_t if a miss) */
+	float exit_t; /* where to continue world walk on a miss */
+	float frac; /* fraction of ray that is covered by this object (0.0: none; 1.0: all)*/
+	float shadowfrac; /* fraction of ray that is covered by all objects (0.0: none; 1.0: all)*/
+	surface_hit_t s;
+};
+
+float blockify(float v) {
+	v*=5.0; /* scale up */
+	v-=fract(v); /* round down to integer */
+	v=mod(v,2.0);  /* wrap around */
+	return v;
+}
+vec3 calc_world_color(vec3 C,vec3 D);
+
+/* Return the t value where this ray hits 
+    the sphere with this center and radius. */
+void sphere_hit(inout ray_hit_t rh,ray_t ray,   // ray parameters
+		vec3 center,float r, // object parameters
+		surface_hit_t surface)  // shading parameters
+{
+	// solve for ray-object intersection via quadratic equation:
+	//   0 = a*t^2 + b*t + c
+	float a=dot(ray.D,ray.D);
+	float b=2.0*dot(ray.C-center,ray.D);
+	float closest_t=-b/(2.0*a); // ray T value at closest approach point
+	float ray_rad=ray_radius(ray,closest_t); // radius at closest approach
+	float center_to_center=length(ray_at(ray,closest_t)-center); // distance between centers
+	circleOverlap_t overlap=circleOverlap(r,ray_rad,center_to_center);
+	float rayFrac=min(overlap.f2,1.0);
+	if (rayFrac==0.0) return; // ray misses completely
+	
+	float first_t, last_t;
+	first_t=last_t=closest_t; // ray-object intersection point
+	float c=dot(ray.C-center,ray.C-center)-r*r;
+	float det=b*b-4.0*a*c;
+	if (det>=0.0) { /* a real hit (not just a glancing edge hit) */
+		float entr_t=(-b-sqrt(det))/(2.0*a); /* - intersection == entry point */
+		float exit_t=(-b+sqrt(det))/(2.0*a); /* + intersection == exit point */
+		if (entr_t>close_t) first_t=entr_t;
+		if (exit_t>close_t) last_t=exit_t;
+	}
+	
+	if (first_t<close_t) return; /* behind head */
+	
+	// Add shadow contribution regardless of sort order:
+	// rh.shadowfrac=max(rh.shadowfrac,rayFrac);  // max shadows (weird voronoi look on boundaries)
+	rh.shadowfrac=min(1.0,rh.shadowfrac+rayFrac);  // sum shadows (still looks a little weird)
+	
+	if (first_t>rh.t) return; /* beyond another object */
+	
+	vec3 P=ray_at(ray,first_t); // ray-object hit point (world coordinates)
+	
+	/* If we got here, we're the closest hit so far. */
+	rh.s=surface;
+	rh.t=first_t; // hit location
+	rh.exit_t=last_t; /* continue walk from exit point */
+	rh.P=P;
+	rh.N=normalize(P-center); // sphere normal is easy!
+	rh.frac=rayFrac; 
+	
+}
+
+/* Return a ray_hit for this world ray.  Tests against all objects (in principle). */
+ray_hit_t world_hit(ray_t ray)
+{
+	ray_hit_t rh; rh.t=invalid_t; rh.frac=rh.shadowfrac=0.0;
+	
+// Intersect new ray with all the world's geometry:
+	// Black camera sphere
+	sphere_hit(rh,ray, camera,0.2,
+		 surface_hit_t(1.0,vec3(0.0,0.0,0.0),0.0,1.01));
+	
+	// Big brown sphere
+	sphere_hit(rh,ray, vec3(0.0,0.0,-115.0),105.0,
+		 surface_hit_t(1.0,vec3(0.4,0.3,0.2),0.0,1.01));
+	
+	// Little green sphere
+	sphere_hit(rh,ray, vec3(0.0,0.0,-11.0),10.7,
+		 surface_hit_t(1.0,vec3(0.2,0.6,0.4),0.3,1.01));
+
+	// Wavy lines of floating red spheres
+	for (float i=-3.0;i<=3.0;i+=1.0) 
+	for (float j=-3.0;j<=3.0;j+=1.0) 
+	{
+		vec2 loc=vec2(i*2.0,j*2.0);
+		// float r=length(loc)/10.0; // around green sphere
+		float z=0.0;
+		sphere_hit(rh,ray, vec3(loc,abs(3.0*sin(i*j+time))-z),0.3+1.0*fract(0.3*i*j),
+			 surface_hit_t(1.0,vec3(0.8,0.4,0.4),0.2,1.01));
+	}
+	
+	return rh;
+}
+
+/* Compute the world's color looking along this ray */
+vec3 calc_world_color(ray_t ray) {
+	vec3 skycolor=vec3(0.4,0.6,1.0);
+	vec3 color=vec3(0.0);
+	float frac=1.0; /* fraction of object light that makes it to the camera */
+	
+	for (int bounce=0;bounce<4;bounce++) 
+	{
+		ray.D=normalize(ray.D);
+	/* Intersect camera ray with world geometry */
+		ray_hit_t rh=world_hit(ray);
+
+		if (rh.t>=invalid_t) {
+			color+=frac*skycolor; // sky color
+			break; // return color; //<- crashes my ATI
+		}
+
+	/* Else do lighting */
+		if (rh.s.density>1.0) { // solid surface 
+			if (dot(rh.N,ray.D)>0.01) rh.N=-rh.N; // flip normal to face right way
+
+			vec3 L=normalize(vec3(0.8,-0.5,0.7));
+			vec3 H=normalize(L+normalize(-ray.D));
+			float specular=rh.s.shiny*pow(clamp(dot(H,rh.N),0.0,1.0),500.0);
+			float diffuse=clamp(dot(rh.N,L),0.0,1.0);
+
+			// check shadow ray 
+			ray_t shadow_ray=ray_t(rh.P,L, ray_radius(ray,rh.t),0.01);
+			ray_hit_t shadow=world_hit(shadow_ray);
+			if (shadow.t<invalid_t) {
+				float illum=1.0-shadow.shadowfrac;
+				diffuse*=illum; 
+				specular*=illum; 
+			}
+
+			float ambient=0.05;
+
+			vec3 curObject=(ambient+diffuse)*rh.s.reflectance+specular*vec3(1.0);
+			
+			color+=frac*rh.frac*curObject;
+			//color=rh.N; // debug: show surface normal at hit
+		}
+		
+	/* Check for ray continuation */
+		if (rh.frac<1.0) { // continue ray walk to composite background
+			if (rh.s.mirror>0.0) { // uh oh, need two recursions
+				// fake mirror with sky light
+				color+=frac*rh.frac*rh.s.mirror*skycolor;
+				//color+=vec3(1,0,0); 
+			}
+			
+			frac*=(1.0-rh.frac);
+			
+			float t=rh.exit_t+0.1;
+			ray.r_start=ray_radius(ray,t);
+			ray.C=ray_at(ray,t);
+		}
+		else if (rh.s.mirror>0.0) { // mirror reflection
+			frac*=rh.s.mirror;
+			float t=rh.t;
+			ray.r_start=ray_radius(ray,t);
+			ray.C=ray_at(ray,t);
+			//color+=rh.s.mirror*calc_world_color(rh.P,reflect(D,rh.N));
+			ray.D=reflect(ray.D,rh.N); // bounce off normal
+		}
+		else break;
+		if (frac<0.005) return color;
+	} 
+	
+	return color;
+}
+
+void sample(void) {
+	vec3 C=camera; // origin of ray (world coords)
+	vec3 D=location-camera; // direction of ray (world coords)
+	ray_t camera_ray=ray_t(C,D,0.0,2.0/768.0);
+
+	gl_FragColor.rgb=calc_world_color(camera_ray);
+	gl_FragColor.a=1.0; // opaque
+}
+
+
+/********* Multigrid Rendering Compression Code **************/
+uniform float threshold; // error to allow before subdividing
+uniform float multigridCoarsest; // 1.0 means we're at the initial level; <1.0 means a finer level; 0.0 means finest level
+uniform sampler2D multigridCoarserTex;  // texture with coarser multigrid levels (last render)
+uniform vec4 multigridCoarser; // pixel counts (xy) and 1.0/pixel counts (zw) for last render
+uniform vec4 multigridFiner; // pixel counts (xy) and 1.0/pixel counts (zw) for current render target
+
+
+/*
+  If this location is smooth in the coarse image, 
+  fit a polynomial to interpolate, write gl_FragColor, and return true.
+  If it's a bad fit, return false;
+*/
+bool multigridCoarseFits() 
+{
+	vec2 texcoords = gl_FragCoord.xy*multigridFiner.zw;
+	vec2 coarsePixel = texcoords * multigridCoarser.xy; // our pixel coordinates in coarserTex
+	vec2 coarseCenter = coarsePixel - fract(coarsePixel) + vec2(0.5); // center of coarse pixel
+	vec2 cen=coarseCenter*multigridCoarser.zw; // interpolation center texcoords in coarserTex
+	vec2 del=vec2(multigridCoarser.zw); // interpolation size texcoords
+	
+	/* Fetch pixel neighborhood in coarser image 
+		y: Top (+), Middle, Bottom (-)
+		x: Left (-), Center, Right (+)
+	*/
+	vec3 TL = vec3(texture2D(multigridCoarserTex,cen+vec2(-del.x,+del.y)));
+	vec3 TC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,+del.y)));
+	vec3 TR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,+del.y)));
+		
+	vec3 ML = vec3(texture2D(multigridCoarserTex,cen+vec2(-del.x,0.0)));
+	vec3 MC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,0.0)));
+	vec3 MR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,0.0)));
+	
+	vec3 BL = vec3(texture2D(multigridCoarserTex,cen+vec2(-del.x,-del.y)));
+	vec3 BC = vec3(texture2D(multigridCoarserTex,cen+vec2(   0.0,-del.y)));
+	vec3 BR = vec3(texture2D(multigridCoarserTex,cen+vec2(+del.x,-del.y)));
+
+/*
+	// Trivial P1 version, just to get running:
+	if (length(MC-TC)+length(MC-ML)+length(MC-MR)+length(MC-BC)>threshold)
+		return false; // need a sample here
+*/
+	// P3 8-neighbor check
+	vec3 A=MC; // constant term
+	vec3 X=(MR-ML)*0.5; // x dependence
+	vec3 Y=(TC-BC)*0.5; // y dependence
+	if (
+		length(A-X - ML)+
+		length(A+X - MR)+
+		length(A-Y - BC)+
+		length(A+Y - TC)+
+		length(A-X-Y - BL)+
+		length(A+X-Y - BR)+
+		length(A-X+Y - TL)+
+		length(A+X+Y - TR)
+		>threshold)
+		return false; // need a sample here
+
+	gl_FragColor = texture2D(multigridCoarserTex,texcoords); // fallback: bilinear
+	
+	return true; // good fit
+}
+
+
+void main(void) {
+	bool doSample=false;
+	if (multigridCoarsest==1.0) {
+		doSample=true; // initial pass: render everything
+	}
+	else { // check if coarser grid can handle it (if so, write to glFragColor)
+		doSample=!multigridCoarseFits(); // may write gl_FragColor
+	}
+	
+	if (doSample)
+	{ // Run user's sampling function
+		sample(); // writes gl_FragColor
+	}
+}
+
+
+
+

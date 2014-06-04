@@ -1,0 +1,12 @@
+/* shared vertex/fragment code */
+uniform vec3 camera; // world coordinates of camera
+varying vec4 myColor;
+varying vec3 location; // world coordinates of our pixel
+/* vertex program */
+void main(void) {
+	myColor = gl_Color;
+	/* Include everything in onscreen position */
+	gl_Position=gl_ModelViewProjectionMatrix*gl_Vertex;
+	/* Don't project, but do modelview transforms */
+	location=vec3(gl_ModelViewMatrix*gl_Vertex);
+}

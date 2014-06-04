@@ -143,6 +143,24 @@ bool multigridCoarseFits()
 	} 
 	else 
 */
+/*
+	if (error==87) 
+	{ // Mitchell[87]'s contrast measure
+		vec3 cmax=max(MC, max(
+			max(max(TL,TR),max(BL,BR)),
+			max(max(TC,BC),max(ML,MR))
+		));
+		vec3 cmin=min(MC, min(
+			min(min(TL,TR),min(BL,BR)),
+			min(min(TC,BC),min(ML,MR))
+		));
+		vec3 contrast=(cmax-cmin)/(cmax+cmin);
+		if (
+			max(max(contrast.r,contrast.g),contrast.b)
+			>threshold
+		   ) return false;
+	} 
+*/
 	{ // interpolating polynomials, level 10
 		int order=0;
 		while (error>=10) { error-=10; order++; }
@@ -151,14 +169,13 @@ bool multigridCoarseFits()
 		int nbormax=1+error-error/2; // manhattan distance to neighbors that count
 		
 		float nbor=1.0+float(error/2); // pixels to search
-/*
-error 0: nbormax 1, nbor 1 (4 neighbors)
-error 1: nbormax 2, nbor 1 (8 neighbors)
-error 2: nbormax 2, nbor 2 (12 neighbors)
-error 3: nbormax 3, nbor 2 (20)
-error 4: nbormax 3, nbor 3 (24)
-error 5: nbormax 4, nbor 3 (46)
-*/
+// error 0: nbormax 1, nbor 1 (4 neighbors)
+//error 1: nbormax 2, nbor 1 (8 neighbors)
+//error 2: nbormax 2, nbor 2 (12 neighbors)
+//error 3: nbormax 3, nbor 2 (20)
+//error 4: nbormax 3, nbor 3 (24)
+//error 5: nbormax 4, nbor 3 (46)
+
 		for (float nborY=-nbor;nborY<=nbor;nborY++)
 		for (float nborX=-nbor;nborX<=nbor;nborX++)
 		{

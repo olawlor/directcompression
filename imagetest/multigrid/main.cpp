@@ -22,7 +22,7 @@ OpenGL Extensions Wrangler:  for gl...ARB extentions.  Must call glewInit after 
 
 
 const float km=1.0/6371.0; // convert kilometers to render units (planet radii)
-int benchmode=0, dumpmode=0, errormetric=0;
+int benchmode=0, dumpmode=0, errormetric=23;
 float bench_target=0.0;
 double interval_time=1.0; // seconds to show each image
 
@@ -144,6 +144,15 @@ public:
 			
 			glActiveTexture(GL_TEXTURE7);
 			glBindTexture(GL_TEXTURE_2D,fb[l+1]->get_color());
+	
+			// Make sure texture filtering modes are correct
+			GLenum target=GL_TEXTURE_2D;
+			glTexParameteri(target, GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+			glTexParameteri(target, GL_TEXTURE_MIN_FILTER,GL_LINEAR); // _MIPMAP_LINEAR);
+			GLenum texWrap=GL_CLAMP_TO_EDGE;
+			glTexParameteri(target, GL_TEXTURE_WRAP_S, texWrap); 
+			glTexParameteri(target, GL_TEXTURE_WRAP_T, texWrap);
+			
 			glFastUniform1i(prog,"multigridCoarserTex",7);
 			glFastUniform4fv(prog,"multigridCoarser", 1, framebuffer2vec4(fb[l+1]) );
 			if (l>=0) glFastUniform4fv(prog,"multigridFiner", 1, framebuffer2vec4(fb[l]) );
