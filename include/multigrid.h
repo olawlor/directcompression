@@ -1,5 +1,22 @@
 /**
-  Simple demo multigrid rendering class.
+  Simple demo rendering class using adaptive pyramidal rendering.
+  
+  This is designed to make it easier to integrate rendering
+  into an existing program.
+  
+  You must also adjust your shader to include the 
+  "multigridCoarserTex" texture, error metric, etc.
+  You can typically just paste in the multigrid rendering code
+  at the end of your existing shader, and rename your main.
+  
+  The standard usage with a single fullscreen GLUT window
+  is to use the "make_multigrid_renderer" macro, make 
+  your proxy, and render:
+  
+  	float error_threshold=0.2; // color error to tolerate
+	make_multigrid_renderer; // saves FBO across frames
+	your_multigrid_proxy proxy; // proxy geometry
+	renderer->render(prog,error_threshold,proxy);
   
   Dr. Orion Lawlor, lawlor@alaska.edu, 2014-03-28 (Public Domain)
 */

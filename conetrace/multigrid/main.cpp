@@ -1,7 +1,9 @@
 /**
-  Draw multiple objects in a single raytracer pass.
+  Load GLSL raytracer, and draw proxy geometry to run the raytracer.
   
-  Dr. Orion Sky Lawlor, olawlor@acm.org, 2012-01-30 (Public Domain)
+  Uses adaptive pyramidal rendering to speed up the raytracer.
+ 
+  Dr. Orion Sky Lawlor, lawlor@alaska.edu, 2014-06-04 (Public Domain)
 */
 #include "physics/world.h" /* physics::library and physics::object */
 #include "ogl/glsl.h"

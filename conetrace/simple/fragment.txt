@@ -1,3 +1,16 @@
+/*
+A toy GLSL demonstration of "conetracing", a raytracing variant
+that uses thicker cones instead of thin rays, which allows it to 
+compute single-sample soft shadows, compute exact antialiased coverage,
+and blurry shadows with a single sample.
+
+The scene is hardcoded here, and generally just a toy demo implementation.
+
+See the original SIGGRAPH 1984 paper "Ray Tracing with Cones" by John Amanatides,
+or Cyril Crassin's Pacific Graphics 2011 "Interactive Indirect Illumination Using Voxel Cone Tracing".
+
+Dr. Orion Lawlor, lawlor@alaska.edu, 2014-06-03 (Public Domain)
+*/
 /********************* Conetracer utilities ***************/
 
 /**
