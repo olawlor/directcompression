@@ -37,7 +37,7 @@ public:
 	rayObject(void) 
 		:physics::object(0.01)  /* <- our timestep, in seconds */
 	{ 
-		threshold=0.5;
+		threshold=0.7;
 	}
 	
 	void simulate(physics::library &lib) { }

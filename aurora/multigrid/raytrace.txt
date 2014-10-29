@@ -1,6 +1,6 @@
 /*
  GLSL fragment shader: raytracer with planetary atmosphere.
- Dr. Orion Sky Lawlor, olawlor@acm.org, 2010-09-04 (Public Domain)
+ Dr. Orion Sky Lawlor, olawlor@acm.org, 2014-10-28 (Public Domain)
 */
 const float M_PI=3.1415926535;
 
@@ -67,35 +67,31 @@ uniform sampler2D auroradeposition; // deposition function
    measured in planetary radii. */
 vec3 deposition_function(float height)
 {
-	if (false) {
 	// Fixed intensity version
-		return vec3(1.0); 
-	}
+	//   return vec3(1.0); 
 	
 	height-=1.0; /* convert to altitude (subtract off planet's radius) */
 
-	if (true) {
-	// Texture lookup
-		float max_height=300.0*km;
-		vec3 tex=vec3(texture2D(auroradeposition, vec2(0.4, 1.0-height/max_height)));
-		return tex*tex; // HDR storage
-		//return exp(-10.0*tex); // reconstruct from decibels (old way, fine but slow!)
-	}
-
+	// Texture lookup version
+	float max_height=300.0*km;
+	vec3 tex=texture2D(auroradeposition, vec2(0.4, 1.0-height/max_height)).rgb;
+	return tex*tex; // HDR storage
+	//return exp(-10.0*tex); // reconstruct from decibels (old way, fine but slow!)
+	
+/*
 // Analytic atmosphere model.  Because the thermosphere is not a uniform temperature or composition, this isn't the same as the low-atmosphere version below.
-	float scaleheight=7.3*km; /* "scale height," where atmosphere reaches 1/e thickness (planetary radius units) */
+	float scaleheight=7.3*km; // "scale height," where atmosphere reaches 1/e thickness (planetary radius units)
 	float extra_scale=(height-100.0*km)*(7.0*km/(300.0*km));
-	/* HACK: adjust k to deal with atmospheric nonlinearity, 
-	    and mix of energies.  
-		The effect of this is to make the final curtains higher
- 	*/
+	// HACK: adjust k to deal with atmospheric nonlinearity, 
+	//    and mix of energies.  
+	//	The effect of this is to make the final curtains higher
 	scaleheight+=max(extra_scale,0.0); 
 	
-	float k=1.0/scaleheight; /* atmosphere density = refDen*exp(-(height-refHt)*k) */
-	float refDen=1033.0*(k); /* atmosphere density at surface, in grams/square cm (1000*psi) */
+	float k=1.0/scaleheight; // atmosphere density = refDen*exp(-(height-refHt)*k) 
+	float refDen=1033.0*(k); // atmosphere density at surface, in grams/square cm (1000*psi) 
 	
 	float rho=refDen*exp(-(height)*k); // atmosphere density (approx 1/100)
-	float R=rho/(k); /* weight of atmosphere above this point (==integral rho) */
+	float R=rho/(k); // weight of atmosphere above this point (==integral rho)
 	
 	// For monodirectional incoming radiation:
 	const float C1=2.11685, C2=2.97035, C3=2.09710, C4=0.74054, C5=0.58795, C6=1.72746, C7=1.37459, C8=0.93296;
@@ -106,6 +102,7 @@ vec3 deposition_function(float height)
 	float E_z = constant* rho / (2.0*R) * ( C1*pow(y,C2)*exp(-C3*pow(y,C4)) + C5*pow(y,C6)*exp(-C7*pow(y,C8)));
 
 	return vec3(E_z);
+*/
 }
 
 // Apply nonlinear tone mapping to final summed output color
@@ -131,7 +128,7 @@ vec3 sample_aurora(vec3 loc) {
 		/* project sample point to surface of planet, and look up in texture */
 		float r=length(loc);
 		vec3 deposition=deposition_function(r);
-		vec3 curtain=vec3(texture2D(auroratex,downtomap(loc)).g);
+		float curtain=texture2D(auroratex,downtomap(loc)).g;
 		return deposition*curtain;
 }
 
@@ -151,13 +148,8 @@ vec3 sample_aurora(ray r,span s) {
 	vec3 step=r.D*dt;
 	float countmiss=0.0, counthit=0.0;
 	float t=s.l;
-	if (false) { // stupid walk along ray (8.4fps)
-		vec3 loc=ray_at(r,t);
-		while (t<s.h) {
-			sum+=sample_aurora(loc); // real curtains
-			t+=dt; loc+=step;
-		}
-	} else if (true) { // very-low-branch version (38fps)
+	
+	// very-low-branch version (38fps)
 		while (t<s.h) {
 			vec3 loc=ray_at(r,t);
 			sum+=sample_aurora(loc); // real curtains
@@ -166,7 +158,8 @@ vec3 sample_aurora(ray r,span s) {
 			t+=dist;
 			counthit++;
 		}
-	} else if (false) { // low-branch version (32fps)
+/*
+	if (false) { // low-branch version (32fps)
 		while (t<s.h) {
 			vec3 loc=ray_at(r,t);
 			float dist=(0.99-texture2D(auroradistance,downtomap(loc)).r)*0.20;
@@ -195,6 +188,7 @@ vec3 sample_aurora(ray r,span s) {
 			}
 		}
 	}
+*/
 	
 	//return 0.1*vec3(countmiss,counthit,0.0); // hitcolors
 	return sum*aurorascale + auroraglow; // full curtain

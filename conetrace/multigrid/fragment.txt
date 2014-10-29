@@ -356,7 +356,7 @@ void sample(void) {
 	vec3 D=location-camera; // direction of ray (world coords)
 	ray_t camera_ray=ray_t(C,D,0.0,2.0/768.0);
 
-	gl_FragColor.rgb=calc_world_color(camera_ray);
+	gl_FragColor.rgb=1.6*calc_world_color(camera_ray);
 	gl_FragColor.a=1.0; // opaque
 }
 
