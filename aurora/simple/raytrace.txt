@@ -397,8 +397,8 @@ void main(void) {
 		vec3 dir=r.D; dir.x=-dir.x; // gotta flip it inside out
 		vec4 starcube=textureCube(stars,dir); 
 		float s=length(vec3(starcube));
-		starcube*=pow(s,4); // tweak star contrast
-		planet=0.1*vec3(starcube);
+		starcube*=pow(s,2.0); // tweak star contrast
+		planet=0.15*vec3(starcube);
 	}
 	gl_FragColor = gl_FragColor + airTransmit*vec4(planet,1.0);	
 }
